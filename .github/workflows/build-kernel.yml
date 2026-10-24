@@ -217,6 +217,15 @@ jobs:
           path: kernel_workspace/AnyKernel3/*
           if-no-files-found: error
 
+      - name: Upload DTBs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dtbs-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
+          path: |
+            kernel_workspace/android-kernel/out/arch/arm/boot/dts/**/*.dtb
+            kernel_workspace/android-kernel/tools/dtbTool
+          if-no-files-found: warn
+
       - name: Upload DTBO image
         if: env.CHECK_DTBO_IS_OK == 'true'
         uses: actions/upload-artifact@v4
