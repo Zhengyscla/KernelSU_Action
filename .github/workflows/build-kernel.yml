@@ -188,6 +188,38 @@ jobs:
       - name: Build kernel
         run: bash scripts/build.sh all
 
+      - name: Save kernel config
+        if: always()
+        run: |
+          KERNEL_DIR="$WORKSPACE/android-kernel"
+          OUT_DIR="$KERNEL_DIR/out"
+
+          echo "=== Find generated .config ==="
+          find "$KERNEL_DIR" -maxdepth 4 -name .config -type f -print
+
+          mkdir -p "$WORKSPACE/debug"
+          if [ -f "$OUT_DIR/.config" ]; then
+            cp "$OUT_DIR/.config" "$WORKSPACE/debug/kernel.config"
+          elif [ -f "$KERNEL_DIR/.config" ]; then
+            cp "$KERNEL_DIR/.config" "$WORKSPACE/debug/kernel.config"
+          fi
+
+          echo "=== Kernel config summary ==="
+          if [ -f "$WORKSPACE/debug/kernel.config" ]; then
+            grep -E '^(CONFIG_(ARM|ARM64|ARCH_MSM8916|LOCALVERSION|IKCONFIG|IKCONFIG_PROC|MODULES|OF|OF_FLATTREE|ARM_APPENDED_DTB))=' \
+              "$WORKSPACE/debug/kernel.config" || true
+          else
+            echo "No .config found"
+          fi
+
+      - name: Upload debug config
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-debug-config-${{ github.run_id }}
+          path: kernel_workspace/debug/
+          if-no-files-found: warn
+
       - name: Package artifacts
         run: bash scripts/package.sh all
 
