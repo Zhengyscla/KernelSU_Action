@@ -185,6 +185,23 @@ jobs:
           key: kernel-${{ env.DEVICE }}-${{ env.KSU_VARIANT }}-${{ env.KERNEL_VERSION }}
           max-size: 2G
 
+      - name: Verify GCC toolchain
+        run: |
+          echo "=== GCC directory ==="
+          ls -lah kernel_workspace/gcc-32/ || true
+
+          echo "=== Find compiler ==="
+          find kernel_workspace/gcc-32 \
+            -name 'arm-linux-androideabi-gcc' -type f
+
+          echo "=== Check expected compiler ==="
+          if [ -x kernel_workspace/gcc-32/bin/arm-linux-androideabi-gcc ]; then
+            kernel_workspace/gcc-32/bin/arm-linux-androideabi-gcc --version
+            kernel_workspace/gcc-32/bin/arm-linux-androideabi-gcc -dumpversion
+          else
+            echo "GCC compiler missing from expected path!"
+            exit 1
+
       - name: Build kernel
         run: bash scripts/build.sh all
 
