@@ -80,7 +80,7 @@ prepare_defconfig() {
 	if [ -n "${KERNEL_NAME:-}" ]; then
 		kconf_set "$DEFCONFIG_PATH" CONFIG_LOCALVERSION "\"-${KERNEL_NAME}\""
 		if [ -f "${KERNEL_DIR}/scripts/setlocalversion" ]; then
-			sed -i 's/echo "\$res"/echo "\$res"/; s/-dirty//g' "${KERNEL_DIR}/scripts/setlocalversion"
+			sed -i 's/-dirty//g' "${KERNEL_DIR}/scripts/setlocalversion"
 		fi
 	fi
 
@@ -105,7 +105,9 @@ make_args() {
 
 build_kernel() {
 	group "Building kernel"
-	export PATH="${CLANG_PATH:-}:${PATH}"
+	if [ -n "${CLANG_PATH:-}" ]; then
+		export PATH="${CLANG_PATH}:${PATH}"
+	fi
 	export KBUILD_BUILD_HOST=${KBUILD_BUILD_HOST:-Github-Action}
 	export KBUILD_BUILD_USER=${KBUILD_BUILD_USER:-kernelsu-action}
 
@@ -123,9 +125,10 @@ build_kernel() {
 		info "using custom manager signature (size=${KSU_EXPECTED_SIZE})"
 	fi
 
-	local cc="clang" args
+	# toolchain.sh exports CC when a GCC toolchain (rather than clang) is used.
+	local cc="${CC:-clang}" args
 	args=$(make_args)
-	if is_true "${ENABLE_CCACHE:-true}" && command -v ccache >/dev/null; then
+	if is_true "${ENABLE_CCACHE:-true}" && command -v ccache >/dev/null && [ "$cc" = "clang" ]; then
 		cc="ccache clang"
 		export CCACHE_DIR="${CCACHE_DIR:-${WORKSPACE}/.ccache}"
 		info "ccache enabled (dir: ${CCACHE_DIR})"
@@ -134,7 +137,7 @@ build_kernel() {
 	cd "$KERNEL_DIR"
 	info "make ${args} ${KERNEL_CONFIG}"
 	# shellcheck disable=SC2086
-	make -j"$(nproc --all)" CC=clang $args "${KERNEL_CONFIG}" \
+	make -j"$(nproc --all)" CC="$cc" $args "${KERNEL_CONFIG}" \
 		|| die "defconfig generation failed"
 
 	info "make ${args}"

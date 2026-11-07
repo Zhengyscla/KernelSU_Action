@@ -7,6 +7,9 @@ set -euo pipefail
 
 WORKSPACE=${WORKSPACE:?WORKSPACE must be set}
 
+SCRIPTS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+GCC_WRAPPER="${SCRIPTS_DIR}/gcc-wrapper.sh"
+
 CLANG_DIR="${WORKSPACE}/clang"
 GCC64_DIR="${WORKSPACE}/gcc-64"
 GCC32_DIR="${WORKSPACE}/gcc-32"
@@ -107,13 +110,43 @@ setup_clang() {
 
 # AOSP's GCC 4.9 prebuilts are still the binutils of choice for pre-5.x trees
 # that cannot yet use LLVM's integrated assembler.
+
+# gcc_prefix DIR BASE -- absolute toolchain prefix (path minus trailing "gcc").
+# DooMLoRD's mega-repo ships several GCC versions side by side, so sort them
+# rather than trusting find's traversal order.
+gcc_prefix() {
+	local dir=$1 base=$2 drv
+	drv=$(find "$dir" \( -type f -o -type l \) -name "${base}gcc" -print 2>/dev/null \
+		| sort -V | tail -n1 || true)
+	[ -n "$drv" ] || die "no ${base}gcc found under ${dir}"
+	chmod +x "$drv" 2>/dev/null || true
+	printf '%s' "${drv%gcc}"
+}
+
+# export_arm32_toolchain DIR BASE -- wire a 32-bit GCC into the build.
+# A native ARCH=arm build links with ${CROSS_COMPILE}gcc, while an arm64 build
+# that merely has a 32-bit compat toolchain uses CROSS_COMPILE_ARM32. The flag
+# wrapper is only safe for the 32-bit target (it rewrites -mtune for ARM).
+export_arm32_toolchain() {
+	local prefix
+	prefix=$(gcc_prefix "$1" "$2")
+	if [ "${ARCH:-arm64}" = "arm" ]; then
+		export_env CROSS_COMPILE "$prefix"
+		is_true "${USE_LLVM:-false}" || export_env CC "$GCC_WRAPPER"
+	else
+		export_env GCC_32 "CROSS_COMPILE_ARM32=${prefix}"
+	fi
+}
+
 setup_gcc() {
 	local gcc_tag=${AOSP_GCC_TAG:-android-12.1.0_r27}
+	local prefix
 
 	if is_true "${USE_CUSTOM_GCC_64:-false}"; then
 		group "Downloading custom GCC (arm64)"
 		fetch_toolchain_generic "${CUSTOM_GCC_64_SOURCE}" "${CUSTOM_GCC_64_BRANCH:-}" "$GCC64_DIR"
-		export_env GCC_64 "CROSS_COMPILE=${GCC64_DIR}/bin/${CUSTOM_GCC_64_BIN:-aarch64-linux-android-}"
+		prefix=$(gcc_prefix "$GCC64_DIR" "${CUSTOM_GCC_64_BIN:-aarch64-linux-android-}")
+		export_env GCC_64 "CROSS_COMPILE=${prefix}"
 		endgroup
 	elif is_true "${ENABLE_GCC_ARM64:-false}"; then
 		group "Downloading AOSP GCC (arm64)"
@@ -121,14 +154,15 @@ setup_gcc() {
 		fetch "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/${gcc_tag}.tar.gz" \
 			"${WORKSPACE}/gcc-aarch64.tar.gz"
 		extract_archive "${WORKSPACE}/gcc-aarch64.tar.gz" "$GCC64_DIR"
-		export_env GCC_64 "CROSS_COMPILE=${GCC64_DIR}/bin/aarch64-linux-android-"
+		prefix=$(gcc_prefix "$GCC64_DIR" "aarch64-linux-android-")
+		export_env GCC_64 "CROSS_COMPILE=${prefix}"
 		endgroup
 	fi
 
 	if is_true "${USE_CUSTOM_GCC_32:-false}"; then
 		group "Downloading custom GCC (arm32)"
 		fetch_toolchain_generic "${CUSTOM_GCC_32_SOURCE}" "${CUSTOM_GCC_32_BRANCH:-}" "$GCC32_DIR"
-		export_env GCC_32 "CROSS_COMPILE_ARM32=${GCC32_DIR}/bin/${CUSTOM_GCC_32_BIN:-arm-linux-androideabi-}"
+		export_arm32_toolchain "$GCC32_DIR" "${CUSTOM_GCC_32_BIN:-arm-linux-androideabi-}"
 		endgroup
 	elif is_true "${ENABLE_GCC_ARM32:-false}"; then
 		group "Downloading AOSP GCC (arm32)"
@@ -136,7 +170,7 @@ setup_gcc() {
 		fetch "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/${gcc_tag}.tar.gz" \
 			"${WORKSPACE}/gcc-arm.tar.gz"
 		extract_archive "${WORKSPACE}/gcc-arm.tar.gz" "$GCC32_DIR"
-		export_env GCC_32 "CROSS_COMPILE_ARM32=${GCC32_DIR}/bin/arm-linux-androideabi-"
+		export_arm32_toolchain "$GCC32_DIR" "arm-linux-androideabi-"
 		endgroup
 	fi
 }
