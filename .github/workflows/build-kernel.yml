@@ -187,20 +187,18 @@ jobs:
 
       - name: Verify GCC toolchain
         run: |
-          echo "=== GCC directory ==="
-          ls -lah kernel_workspace/gcc-32/ || true
+          GCC=$(find kernel_workspace/gcc-32 -type f \
+          -name 'arm-linux-androideabi-gcc' -print -quit)
 
-          echo "=== Find compiler ==="
-          find kernel_workspace/gcc-32 \
-            -name 'arm-linux-androideabi-gcc' -type f
-
-          echo "=== Check expected compiler ==="
-          if [ -x kernel_workspace/gcc-32/bin/arm-linux-androideabi-gcc ]; then
-            kernel_workspace/gcc-32/bin/arm-linux-androideabi-gcc --version
-            kernel_workspace/gcc-32/bin/arm-linux-androideabi-gcc -dumpversion
-          else
-            echo "GCC compiler missing from expected path!"
+          if [ -z "$GCC" ]; then
+            echo "[ERROR] GCC compiler not found"
             exit 1
+          fi
+
+          echo "[INFO] GCC found: $GCC"
+          chmod +x "$GCC"
+          "$GCC" --version
+          "$GCC" -dumpversion
 
       - name: Build kernel
         run: bash scripts/build.sh all
