@@ -185,6 +185,33 @@ jobs:
           key: kernel-${{ env.DEVICE }}-${{ env.KSU_VARIANT }}-${{ env.KERNEL_VERSION }}
           max-size: 2G
 
+      - name: Verify AOSP GCC 4.9 driver
+        run: |
+          set -e
+
+          URL="https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-11.0.0_r47.tar.gz"
+
+          curl -fL "$URL" -o /tmp/gcc49.tar.gz
+
+          echo "=== Archive size ==="
+          du -h /tmp/gcc49.tar.gz
+
+          echo "=== GCC driver entries ==="
+          tar -tzf /tmp/gcc49.tar.gz | grep -E '(^|/)bin/arm-linux-androideabi-gcc(-[0-9.]+)?$' || true
+
+          echo "=== Extract and verify ==="
+          mkdir -p /tmp/gcc49
+          tar -xzf /tmp/gcc49.tar.gz -C /tmp/gcc49
+
+          find /tmp/gcc49 -type f -name 'arm-linux-androideabi-gcc*' -print
+
+          if [ -x /tmp/gcc49/bin/arm-linux-androideabi-gcc ]; then
+            /tmp/gcc49/bin/arm-linux-androideabi-gcc --version
+          else
+            echo "[ERROR] GCC driver is still missing"
+            exit 1
+          fi
+
       - name: Inspect AOSP GCC archive
         run: |
           URL="https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz"
