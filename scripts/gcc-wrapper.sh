@@ -1,6 +1,7 @@
 #!/bin/bash
 # Filter out flags unsupported by GCC 4.8
-real_gcc="/home/runner/work/KernelSU_Action/KernelSU_Action/kernel_workspace/gcc-32/arm-linux-androideabi-4.8/bin/arm-linux-androideabi-gcc"
+# real_gcc="/home/runner/work/KernelSU_Action/KernelSU_Action/kernel_workspace/gcc-32/arm-linux-androideabi-4.8/bin/arm-linux-androideabi-gcc"
+real_gcc="/home/runner/work/KernelSU_Action/KernelSU_Action/kernel_workspace/gcc-32/bin/arm-linux-androideabi-gcc"
 
 args=()
 for arg in "$@"; do
