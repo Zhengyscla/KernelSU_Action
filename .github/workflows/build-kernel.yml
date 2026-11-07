@@ -185,21 +185,6 @@ jobs:
           key: kernel-${{ env.DEVICE }}-${{ env.KSU_VARIANT }}-${{ env.KERNEL_VERSION }}
           max-size: 2G
 
-      - name: Verify GCC toolchain
-        run: |
-          GCC=$(find kernel_workspace/gcc-32 -type f \
-          -name 'arm-linux-androideabi-gcc' -print -quit)
-
-          if [ -z "$GCC" ]; then
-            echo "[ERROR] GCC compiler not found"
-            exit 1
-          fi
-
-          echo "[INFO] GCC found: $GCC"
-          chmod +x "$GCC"
-          "$GCC" --version
-          "$GCC" -dumpversion
-
       - name: Inspect GCC binaries and symlinks
         run: |
           echo "=== bin directory ==="
@@ -216,6 +201,21 @@ jobs:
 
           echo "=== executable files ==="
           find kernel_workspace/gcc-32 -type f -executable
+
+      - name: Verify GCC toolchain
+        run: |
+          GCC=$(find kernel_workspace/gcc-32 -type f \
+          -name 'arm-linux-androideabi-gcc' -print -quit)
+
+          if [ -z "$GCC" ]; then
+            echo "[ERROR] GCC compiler not found"
+            exit 1
+          fi
+
+          echo "[INFO] GCC found: $GCC"
+          chmod +x "$GCC"
+          "$GCC" --version
+          "$GCC" -dumpversion
 
       - name: Build kernel
         run: bash scripts/build.sh all
