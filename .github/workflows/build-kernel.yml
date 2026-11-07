@@ -200,6 +200,23 @@ jobs:
           "$GCC" --version
           "$GCC" -dumpversion
 
+      - name: Inspect GCC binaries and symlinks
+        run: |
+          echo "=== bin directory ==="
+          ls -lah kernel_workspace/gcc-32/bin/
+
+          echo "=== compiler-related entries ==="
+          find kernel_workspace/gcc-32 -iname '*gcc*' -o -iname '*androideabi*'
+
+          echo "=== symlinks ==="
+          find kernel_workspace/gcc-32 -type l -ls
+
+          echo "=== arm-linux-androideabi directory ==="
+          ls -lah kernel_workspace/gcc-32/arm-linux-androideabi/
+
+          echo "=== executable files ==="
+          find kernel_workspace/gcc-32 -type f -executable
+
       - name: Build kernel
         run: bash scripts/build.sh all
 
