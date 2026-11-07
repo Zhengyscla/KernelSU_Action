@@ -118,7 +118,10 @@ gcc_prefix() {
 	local dir=$1 base=$2 drv
 	drv=$(find "$dir" \( -type f -o -type l \) -name "${base}gcc" -print 2>/dev/null \
 		| sort -V | tail -n1 || true)
-	[ -n "$drv" ] || die "no ${base}gcc found under ${dir}"
+	[ -n "$drv" ] || die "no ${base}gcc found under ${dir}
+       AOSP's GCC prebuilts are not uniformly complete: some
+       arm-linux-androideabi-4.9 tags ship only binutils (gcc-ar/nm/ranlib).
+       Use USE_CUSTOM_GCC_32=true with a full toolchain instead."
 	chmod +x "$drv" 2>/dev/null || true
 	printf '%s' "${drv%gcc}"
 }

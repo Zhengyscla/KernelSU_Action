@@ -140,6 +140,14 @@ build_kernel() {
 	make -j"$(nproc --all)" CC="$cc" $args "${KERNEL_CONFIG}" \
 		|| die "defconfig generation failed"
 
+	# Kconfig silently drops symbols whose dependencies are unmet. A kernel that
+	# claims to include KernelSU but does not is the worst failure mode, so fail
+	# here instead of after a long build.
+	if [ "${KSU_VARIANT:-none}" != "none" ]; then
+		grep -q '^CONFIG_KSU=y' "${OUT}/.config" \
+			|| die "CONFIG_KSU was dropped by Kconfig (unmet dependency, e.g. SELinux), refusing to build without KernelSU."
+	fi
+
 	info "make ${args}"
 	# shellcheck disable=SC2086
 	make -j"$(nproc --all)" CC="$cc" $args \
