@@ -224,8 +224,10 @@ static int can_umount(const struct path *path, int flags)
 		return -EINVAL;
 	if (!check_mnt(mnt))
 		return -EINVAL;
+#ifdef MNT_LOCKED
 	if (mnt->mnt.mnt_flags & MNT_LOCKED) /* Check optimistically */
 		return -EINVAL;
+#endif
 	if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 	return 0;

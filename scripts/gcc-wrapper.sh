@@ -33,7 +33,7 @@ fi
 
 chmod +x "$real_gcc" 2>/dev/null || true
 
-echo "[INFO] Using GCC: $real_gcc" >&2
+[ -n "${RUNNER_DEBUG:-}" ] && echo "[INFO] Using GCC: $real_gcc" >&2
 
 args=()
 for arg in "$@"; do
