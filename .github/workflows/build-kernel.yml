@@ -185,6 +185,18 @@ jobs:
           key: kernel-${{ env.DEVICE }}-${{ env.KSU_VARIANT }}-${{ env.KERNEL_VERSION }}
           max-size: 2G
 
+      - name: Inspect AOSP GCC archive
+        run: |
+          URL="https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-12.1.0_r27.tar.gz"
+
+          curl -L "$URL" -o /tmp/gcc.tar.gz
+
+          echo "=== Archive GCC entries ==="
+          tar -tzf /tmp/gcc.tar.gz | grep -E '(^|/)bin/.*(gcc|cpp)$' | head -100
+
+          echo "=== Archive metadata ==="
+          tar -tzf /tmp/gcc.tar.gz | head -40
+
       - name: Inspect GCC binaries and symlinks
         run: |
           echo "=== bin directory ==="
