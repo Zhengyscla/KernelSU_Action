@@ -141,6 +141,13 @@ build_kernel() {
 		   printf 'int main(void) { return 0; }\n' | "${CROSS_COMPILE}gcc" -E -mno-android - >/dev/null 2>&1; then
 			kcflags="-mno-android -marm"
 		fi
+		# KernelSU compiles ksu.o with -std=gnu11. Old ARM headers use
+		# "extern inline", which C99/C11 turn into a global definition and
+		# collide with arch/arm/kernel's return_address. GNU89 inline
+		# semantics match the rest of the kernel.
+		if [ "${KSU_VARIANT:-none}" != "none" ]; then
+			kcflags="${kcflags} -fgnu89-inline"
+		fi
 		export KCFLAGS="$kcflags"
 		info "using KCFLAGS='${KCFLAGS}'"
 	fi
