@@ -75,6 +75,11 @@ prepare_defconfig() {
 		done
 	fi
 
+	# The ROM's prebuilt vendor modules were built against exactly this kernel
+	# version. A git suffix (-g<sha>) or -dirty changes uname -r and breaks their
+	# vermagic, so keep the version stable unless KERNEL_NAME overrides it below.
+	kconf_disable "$DEFCONFIG_PATH" CONFIG_LOCALVERSION_AUTO
+
 	# A stable LOCALVERSION keeps artifact names predictable. Without this the
 	# tree appends "-dirty" as soon as any patch above touches a tracked file.
 	if [ -n "${KERNEL_NAME:-}" ]; then
@@ -123,6 +128,21 @@ build_kernel() {
 	if [ -n "${KSU_EXPECTED_SIZE:-}" ] && [ -n "${KSU_EXPECTED_HASH:-}" ]; then
 		export KSU_EXPECTED_SIZE KSU_EXPECTED_HASH
 		info "using custom manager signature (size=${KSU_EXPECTED_SIZE})"
+	fi
+
+	# AOSP's Android arm toolchain (arm-linux-androideabi-*) defaults to
+	# Android mode: -fpic, -mbionic and possibly Thumb, which produces an
+	# unbootable kernel. AndroidKernel.mk probes for -mno-android and passes it
+	# when supported; force ARM mode for the same reason. arm-eabi toolchains
+	# do not accept -mno-android and default to ARM already.
+	if ! is_true "${USE_LLVM:-false}" && [ "${ARCH}" = "arm" ]; then
+		local kcflags="-marm"
+		if [ -n "${CROSS_COMPILE:-}" ] &&
+		   printf 'int main(void) { return 0; }\n' | "${CROSS_COMPILE}gcc" -E -mno-android - >/dev/null 2>&1; then
+			kcflags="-mno-android -marm"
+		fi
+		export KCFLAGS="$kcflags"
+		info "using KCFLAGS='${KCFLAGS}'"
 	fi
 
 	# toolchain.sh exports CC when a GCC toolchain (rather than clang) is used.
