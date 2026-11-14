@@ -2,7 +2,8 @@
 
 # KernelSU Action
 
-> **本 fork 已裁剪为 SM-T560NU（gtelwifiue / msm8916，Linux 3.10.108）专用构建。**
+> **注意：本 fork 已裁剪为 SM-T560NU（gtelwifiue / msm8916，Linux 3.10.108）专用构建。**
+> **请勿轻易 fork 本分支进行其它设备构建！**
 > 只保留 backslashxx KernelSU、path_umount 回移和 boot.img 重打包，产物只有
 > `zImage` 与 `boot.img`。下文中其它 KernelSU 变体、SUSFS、KPM、AnyKernel3
 > 等内容已不再适用。
