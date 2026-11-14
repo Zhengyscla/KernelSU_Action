@@ -4,10 +4,6 @@
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=scripts/kernelsu.sh
-. "$(dirname "${BASH_SOURCE[0]}")/kernelsu.sh"
-# shellcheck source=scripts/patches.sh
-. "$(dirname "${BASH_SOURCE[0]}")/patches.sh"
 
 KERNEL_DIR=${KERNEL_DIR:?KERNEL_DIR must be set}
 WORKSPACE=${WORKSPACE:-$(cd "${KERNEL_DIR}/.." && pwd)}
@@ -26,32 +22,11 @@ prepare_defconfig() {
 
 	cp "$DEFCONFIG_PATH" "${WORKSPACE}/defconfig.orig"
 
-	local kver
-	kver=$(kernel_version "$KERNEL_DIR" || echo "0.0")
-
 	if [ "${KSU_VARIANT:-none}" != "none" ]; then
+		# backslashxx on 32-bit ARM uses syscall-table tampering; no kprobes and
+		# no source-level hooks are needed.
 		kconf_enable "$DEFCONFIG_PATH" CONFIG_KSU
-		ksu_hook_configs "${KSU_VARIANT}" "${KSU_HOOK_MODE:-auto}" "$DEFCONFIG_PATH" "$kver"
-
-		if is_true "${ENABLE_SUSFS:-false}"; then
-			susfs_defconfig "$DEFCONFIG_PATH"
-		fi
-
-		if is_true "${ENABLE_KPM:-false}"; then
-			# patch_linux resolves symbols at runtime, so kallsyms must be complete.
-			kconf_set_many "$DEFCONFIG_PATH" \
-				CONFIG_KPM=y CONFIG_KALLSYMS=y CONFIG_KALLSYMS_ALL=y
-		fi
-	fi
-
-	# Overlayfs backs KernelSU's module mounts and system-partition writes.
-	is_true "${ADD_OVERLAYFS_CONFIG:-false}" && kconf_enable "$DEFCONFIG_PATH" CONFIG_OVERLAY_FS
-
-	# Kept as a standalone switch for kernels that need kprobes for their own
-	# reasons, independent of the hook mode.
-	if is_true "${ADD_KPROBES_CONFIG:-false}"; then
-		kconf_set_many "$DEFCONFIG_PATH" \
-			CONFIG_MODULES=y CONFIG_KPROBES=y CONFIG_HAVE_KPROBES=y CONFIG_KPROBE_EVENTS=y
+		kconf_enable "$DEFCONFIG_PATH" CONFIG_KSU_TAMPER_SYSCALL_TABLE
 	fi
 
 	if is_true "${DISABLE_LTO:-false}"; then
@@ -155,11 +130,6 @@ build_kernel() {
 	# toolchain.sh exports CC when a GCC toolchain (rather than clang) is used.
 	local cc="${CC:-clang}" args
 	args=$(make_args)
-	if is_true "${ENABLE_CCACHE:-true}" && command -v ccache >/dev/null && [ "$cc" = "clang" ]; then
-		cc="ccache clang"
-		export CCACHE_DIR="${CCACHE_DIR:-${WORKSPACE}/.ccache}"
-		info "ccache enabled (dir: ${CCACHE_DIR})"
-	fi
 
 	cd "$KERNEL_DIR"
 	info "make ${args} ${KERNEL_CONFIG}"
@@ -196,18 +166,6 @@ check_output() {
 
 	ok "kernel image: ${KERNEL_IMAGE_NAME} ($(du -h "$image" | cut -f1))"
 	export_env CHECK_FILE_IS_OK true
-
-	if is_true "${NEED_DTBO:-false}"; then
-		[ -f "${boot}/dtbo.img" ] || die "NEED_DTBO=true but ${boot}/dtbo.img was not produced"
-		export_env CHECK_DTBO_IS_OK true
-		ok "dtbo.img present"
-	fi
-
-	# KPM rewrites the image in place, so it has to happen after the build and
-	# before packaging.
-	if is_true "${ENABLE_KPM:-false}"; then
-		kpm_patch_image "$image"
-	fi
 
 	# Record the version string the kernel actually reports.
 	if [ -f "${OUT}/include/generated/utsrelease.h" ]; then

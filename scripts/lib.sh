@@ -140,8 +140,8 @@ extract_archive() {
 # Every KernelSU variant's setup.sh ends its checkout with
 #     git checkout "$1" || echo "[-] Checkout default branch"
 # so passing a ref that does NOT exist does not fail -- it silently leaves you
-# on the default branch. Builds then "succeed" while quietly missing SUSFS or
-# whichever feature the ref was supposed to bring in. Always validate first.
+# on the default branch. Builds then "succeed" while quietly missing the feature
+# the ref was supposed to bring in. Always validate first.
 ref_exists() {
 	local repo=$1 ref=$2
 	[ -n "$ref" ] || return 1
@@ -179,13 +179,6 @@ kconf_set() {
 kconf_enable()  { kconf_set "$1" "$2" y; }
 kconf_disable() { kconf_set "$1" "$2" n; }
 
-# kconf_get FILE KEY -- echo the current value, empty if unset.
-kconf_get() {
-	local file=$1 key=$2
-	case "$key" in CONFIG_*) ;; *) key="CONFIG_${key}" ;; esac
-	sed -nE "s%^[[:space:]]*${key}=(.*)$%\1%p" "$file" | tail -n1
-}
-
 # kconf_set_many FILE KEY=VAL... -- convenience for long option blocks.
 kconf_set_many() {
 	local file=$1; shift
@@ -194,36 +187,6 @@ kconf_set_many() {
 		[ -n "$kv" ] || continue
 		kconf_set "$file" "${kv%%=*}" "${kv#*=}"
 	done
-}
-
-# --------------------------------------------------------------- patching ---
-
-# apply_patch FILE [STRIP] -- apply a patch, tolerating already-applied state.
-# Returns 0 when applied or already present, 1 when it genuinely does not fit.
-apply_patch() {
-	local patch=$1 strip=${2:-1}
-	[ -f "$patch" ] || die "patch not found: ${patch}"
-	if patch -p"$strip" --dry-run --force --silent <"$patch" >/dev/null 2>&1; then
-		patch -p"$strip" --force --no-backup-if-mismatch <"$patch" >/dev/null
-		ok "applied $(basename "$patch")"
-		return 0
-	fi
-	if patch -p"$strip" -R --dry-run --force --silent <"$patch" >/dev/null 2>&1; then
-		warn "$(basename "$patch") is already applied, skipping"
-		return 0
-	fi
-	# Last resort: let patch do its fuzzy best, but only after proving that the
-	# entire patch applies.  Applying first and checking the exit code leaves
-	# successfully matched hunks in the tree when a later hunk rejects; callers
-	# then run their fallback against a half-patched (and often uncompilable)
-	# source file.
-	if patch -p"$strip" --dry-run --force --fuzz=3 --silent <"$patch" >/dev/null 2>&1; then
-		patch -p"$strip" --force --fuzz=3 --no-backup-if-mismatch <"$patch" >/dev/null
-		warn "$(basename "$patch") applied with fuzz; verify the result"
-		return 0
-	fi
-	warn "failed to apply $(basename "$patch")"
-	return 1
 }
 
 # --------------------------------------------------------------- versions ---

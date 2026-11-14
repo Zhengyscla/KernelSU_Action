@@ -198,21 +198,11 @@ fetch_toolchain_generic() {
 	esac
 }
 
-# mkbootimg is only needed when repacking a boot image.
-setup_mkbootimg() {
-	is_true "${BUILD_BOOT_IMG:-false}" || return 0
-	group "Downloading mkbootimg tools"
-	local dir="${WORKSPACE}/tools"
-	rm -rf "$dir"
-	retry 3 git clone -q --depth=1 -b main-kernel \
-		https://android.googlesource.com/platform/system/tools/mkbootimg "$dir" \
-		|| die "failed to clone mkbootimg"
-	ok "mkbootimg ready"
-	endgroup
-}
+# mkbootimg is not needed: package.sh repacks the Samsung boot image directly.
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-	setup_clang
+	if is_true "${USE_LLVM:-false}" || is_true "${USE_CUSTOM_CLANG:-false}"; then
+		setup_clang
+	fi
 	setup_gcc
-	setup_mkbootimg
 fi
