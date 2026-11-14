@@ -347,6 +347,47 @@ assert_single_path_umount() {
 	fi
 }
 
+# extract_diff_git_section SRC DST TARGET -- copy only the file section for
+# TARGET out of a "diff --git" patch.
+extract_diff_git_section() {
+	local src=$1 dst=$2 target=$3
+	awk -v target="$target" '
+		/^diff --git / { keep = (index($0, target) > 0) }
+		keep { print }
+	' "$src" >"$dst"
+}
+
+# SukiSU's per-version hook patches wire exec/stat/open/read, but they do not
+# touch kernel/reboot.c. Without that hook every supercall (manager fd,
+# allowlist changes, module operations) dies silently: previously allowed apps
+# still get root through the execve hook, which makes the kernel look healthy.
+# scope_min_manual_hooks_v1.6.patch carries the missing hunk and calls the
+# same ksu_handle_sys_reboot() this tree implements, so graft just that file.
+sukisu_ensure_supercall_hook() {
+	local dir=$1 rc="${KERNEL_DIR}/kernel/reboot.c"
+	[ -f "$rc" ] || return 0
+	grep -q 'ksu_handle_sys_reboot' "$rc" && return 0
+
+	local src="${dir}/hooks/scope_min_manual_hooks_v1.6.patch"
+	[ -f "$src" ] || die "no scope_min manual hooks patch; cannot wire the sys_reboot supercall hook"
+
+	local tmpdir tmp
+	tmpdir=$(mktemp -d)
+	tmp="${tmpdir}/ksu_reboot_supercall.patch"
+	extract_diff_git_section "$src" "$tmp" "kernel/reboot.c"
+	if [ ! -s "$tmp" ]; then
+		rm -rf "$tmpdir"
+		die "scope_min patch has no kernel/reboot.c section; cannot wire the sys_reboot supercall hook"
+	fi
+	if ( cd "$KERNEL_DIR" && apply_patch "$tmp" 1 ); then
+		ok "installed the sys_reboot supercall hook"
+	else
+		rm -rf "$tmpdir"
+		die "failed to install the sys_reboot supercall hook; manager operations would silently fail"
+	fi
+	rm -rf "$tmpdir"
+}
+
 # Manual/syscall hook patches for pre-GKI trees, used when the fork expects the
 # hooks to already exist in the kernel source rather than hooking via kprobes.
 hooks_patch_apply() {
@@ -389,6 +430,7 @@ hooks_patch_apply() {
 			fi
 			if ( cd "$KERNEL_DIR" && apply_patch "$use" 1 ); then
 				if [ -n "$filtered" ]; then rm -f "$filtered"; fi
+				sukisu_ensure_supercall_hook "$dir"
 				endgroup; return 0
 			fi
 			if [ -n "$filtered" ]; then rm -f "$filtered"; fi
