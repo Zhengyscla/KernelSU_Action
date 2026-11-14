@@ -75,13 +75,74 @@ ksu_default_is_branch() {
 # That header only exists from 5.10 and nothing in the tree uses it, so older
 # kernels fail with "file not found" while compiling ksu_main.c.
 ksu_legacy_source_fixups() {
-	local kver=$1 dir=$2 inc
+	local kver=$1 dir=$2 src inc compat
+	src="${KERNEL_DIR}/${dir}/kernel"
+	inc="${src}/kernel_includes.h"
+	compat="${src}/kernel_compat.h"
+
 	ver_ge "$kver" "5.10" && return 0
-	inc="${KERNEL_DIR}/${dir}/kernel/kernel_includes.h"
-	[ -f "$inc" ] || return 0
-	if grep -q '^#include <linux/static_call\.h>$' "$inc"; then
+
+	# SukiSU-Ultra's builtin tree includes <linux/static_call.h> unconditionally.
+	# That header only exists from 5.10 and nothing in the tree uses it, so
+	# older kernels fail with "file not found" while compiling ksu_main.c.
+	if [ -f "$inc" ] && grep -q '^#include <linux/static_call\.h>$' "$inc"; then
 		sed -i '/^#include <linux\/static_call\.h>$/d' "$inc"
 		info "dropped unused <linux/static_call.h> include from ${dir}/kernel/kernel_includes.h (kernel ${kver} predates it)"
+	fi
+
+	[ -f "$compat" ] || return 0
+
+	# The surrounding comment says KPM needs 5.10+ interfaces, but the guard
+	# says 4.4, so old kernels compile KPM and trip over two-argument
+	# access_ok() and other newer interfaces.
+	local tmp
+	tmp=$(mktemp)
+	awk '
+		{ lines[NR] = $0 }
+		END {
+			for (i = 1; i <= NR; i++) {
+				if (lines[i] == "#define KSU_CAN_USE_KPM" &&
+				    lines[i - 1] == "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)")
+					lines[i - 1] = "#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)"
+			}
+			for (i = 1; i <= NR; i++)
+				print lines[i]
+		}
+	' "$compat" >"$tmp"
+	if cmp -s "$compat" "$tmp"; then
+		rm -f "$tmp"
+	else
+		mv "$tmp" "$compat"
+		info "raised the KPM source guard to 5.10 in ${dir}/kernel/kernel_compat.h"
+	fi
+
+	# kvcalloc() only exists from 4.18; ksu_kvcalloc() sits on top of
+	# kvmalloc(), which the compat layer already provides for older trees.
+	if [ -f "${KERNEL_DIR}/include/linux/mm.h" ] &&
+	   ! grep -q 'kvcalloc' "${KERNEL_DIR}/include/linux/mm.h" &&
+	   ! grep -q 'ksu_kvcalloc' "$compat"; then
+		tmp=$(mktemp)
+		awk '
+			{ lines[NR] = $0; if ($0 == "#endif") last = NR }
+			END {
+				for (i = 1; i <= NR; i++) {
+					if (i == last) {
+						print ""
+						print "/* kernels before 4.18 do not provide kvcalloc() */"
+						print "static inline void *ksu_kvcalloc(size_t n, size_t size, gfp_t flags)"
+						print "{"
+						print "    if (size && n > ((size_t)-1) / size)"
+						print "        return NULL;"
+						print "    return kvmalloc(n * size, flags | __GFP_ZERO);"
+						print "}"
+						print "#define kvcalloc ksu_kvcalloc"
+					}
+					print lines[i]
+				}
+			}
+		' "$compat" >"$tmp"
+		mv "$tmp" "$compat"
+		info "added a kvcalloc() compatibility shim to ${dir}/kernel/kernel_compat.h"
 	fi
 }
 
