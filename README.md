@@ -170,6 +170,9 @@ patches/
 | SUSFS 内核补丁打不上 | `SUSFS_BRANCH` 与内核版本不匹配，或该树已被改动过 |
 | KernelSU 装上了但 su 无反应 | 旧内核的 kprobes 不可靠，改 `KSU_HOOK_MODE=manual` |
 | `fatal error: 'linux/static_call.h' file not found` | SukiSU-Ultra `builtin` 树里有一个无用的无条件 include（5.10 才有的头文件），脚本会在 5.10 以下内核上自动移除 |
+| `fatal error: 'linux/susfs.h' file not found` | SukiSU 的 `CONFIG_KSU_SUSFS` 是 `default y`，`ENABLE_SUSFS=false` 时脚本会显式写入 `# CONFIG_KSU_SUSFS is not set` |
+| `access_ok` 宏参数错误 / `implicit declaration of 'kvcalloc'` | SukiSU builtin 把 KPM 的版本门槛写成了 4.4（实际需要 5.10），且 4.18 以下内核没有 `kvcalloc()`；脚本会自动修正门槛并补一个基于 `kvmalloc()` 的 shim |
+| 管理器显示"工作中"，但无法授予新应用 root、模块不生效 | SukiSU 的 per-version hook 补丁漏了 `kernel/reboot.c` 的 supercall 入口，管理器拿不到内核 fd；脚本会从 `scope_min_manual_hooks_v1.6.patch` 单独补上该 hunk，失败时直接中止构建 |
 | 模块挂载卸载不掉 | 5.9 以下内核需要 `ENABLE_PATH_UMOUNT=true` |
 | 找不到 defconfig | `KERNEL_CONFIG` 写错，日志会列出可用的 defconfig |
 
