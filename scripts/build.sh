@@ -35,6 +35,11 @@ prepare_defconfig() {
 
 		if is_true "${ENABLE_SUSFS:-false}"; then
 			susfs_defconfig "$DEFCONFIG_PATH"
+		else
+			# SukiSU's Kconfig declares CONFIG_KSU_SUSFS with "default y", so
+			# leaving it out of the defconfig enables it and pulls in
+			# <linux/susfs.h> even though the kernel side was never patched.
+			kconf_disable "$DEFCONFIG_PATH" CONFIG_KSU_SUSFS
 		fi
 
 		if is_true "${ENABLE_KPM:-false}"; then
