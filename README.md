@@ -43,7 +43,7 @@
 | `kernelsu` | [tiann/KernelSU](https://github.com/tiann/KernelSU) | 官方原版。**v1.0 起不再支持 Non-GKI**，旧内核会自动锁定到 `v0.9.5` |
 | `kernelsu-next` | [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) | 分支为 `dev`（默认）/ `stable` / `legacy`；旧内核请用 `legacy` |
 | `sukisu-ultra` | [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) | `main` 为 v4 模块化树（支持 KPM）；`builtin` 为源码内置树，且是**唯一自带 SUSFS** 的分支 |
-| `resukisu` | [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU) | SukiSU-Ultra 的再分支，主打旧内核/Non-GKI 兼容与多管理器支持 |
+| `bakasu` | [BakaSU](https://github.com/Baka-SU/BakaSU) | 原 ReSukiSU（2026-10 改名），SukiSU-Ultra 的再分支，主打旧内核/Non-GKI 兼容与多管理器支持。旧值 `resukisu` 仍可用 |
 | `rsuntk` | [rsuntk/KernelSU](https://github.com/rsuntk/KernelSU) | 即 RKSU |
 | `backslashxx` | [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) | 以手动 hook 为主 |
 
@@ -82,6 +82,8 @@
 `path_umount()` 是 Linux 5.9 才引入的。KernelSU 靠它在应用检测 root 前卸载自己的挂载，所以更旧的内核需要回移这个函数，否则"卸载模块挂载"会静默失效。
 
 `ENABLE_PATH_UMOUNT=true` 即可，代码直接取自上游，插入到 `fs/namespace.c` 中 `do_umount()` 之后。在 5.9+ 的内核上会自动跳过；已经有该函数时也会跳过。
+
+> SukiSU_patch 的 4.14 hook 补丁里也带了一份相同的 `can_umount()`/`path_umount()` 后移代码。在某些厂商树上它会因上下文偏移被 fuzz 到 `may_mount()` 之前，导致重复定义和隐式声明错误。脚本在检测到 `path_umount()` 已存在时，会先把该补丁中的这个 hunk 剔除再应用。
 
 ## 其它补丁
 
@@ -177,7 +179,7 @@ patches/
 - [KernelSU](https://github.com/tiann/KernelSU)
 - [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next)
 - [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra)
-- [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU)
+- [BakaSU](https://github.com/Baka-SU/BakaSU)（原 ReSukiSU）
 - [susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu)
 - [SukiSU_patch](https://github.com/ShirkNeko/SukiSU_patch)
 - [xiaoxindada](https://github.com/xiaoxindada)
