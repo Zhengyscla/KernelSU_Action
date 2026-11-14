@@ -67,6 +67,24 @@ ksu_default_is_branch() {
 	[ "$1" = "bakasu" ] || [ "$1" = "resukisu" ]
 }
 
+# Some KernelSU trees carry source that only builds on newer kernels despite
+# advertising pre-GKI support. Apply the smallest possible fixups here rather
+# than vendoring a whole patch.
+#
+# SukiSU-Ultra's builtin tree includes <linux/static_call.h> unconditionally.
+# That header only exists from 5.10 and nothing in the tree uses it, so older
+# kernels fail with "file not found" while compiling ksu_main.c.
+ksu_legacy_source_fixups() {
+	local kver=$1 dir=$2 inc
+	ver_ge "$kver" "5.10" && return 0
+	inc="${KERNEL_DIR}/${dir}/kernel/kernel_includes.h"
+	[ -f "$inc" ] || return 0
+	if grep -q '^#include <linux/static_call\.h>$' "$inc"; then
+		sed -i '/^#include <linux\/static_call\.h>$/d' "$inc"
+		info "dropped unused <linux/static_call.h> include from ${dir}/kernel/kernel_includes.h (kernel ${kver} predates it)"
+	fi
+}
+
 # --------------------------------------------------------- RKSU installer ----
 #
 # RKSU's current kernel/setup.sh performs:
@@ -362,6 +380,8 @@ ksu_install() {
 	fi
 
 	ok "${name} final checkout: ${head_desc} (${head_sha})"
+
+	ksu_legacy_source_fixups "$kver" "$dir"
 
 	# --- publish facts the later steps need --------------------------------
 
