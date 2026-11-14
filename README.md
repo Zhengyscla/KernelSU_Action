@@ -169,6 +169,7 @@ patches/
 | `ref '...' does not exist` | `KSU_REF` 填了不存在的分支，日志会列出可用分支 |
 | SUSFS 内核补丁打不上 | `SUSFS_BRANCH` 与内核版本不匹配，或该树已被改动过 |
 | KernelSU 装上了但 su 无反应 | 旧内核的 kprobes 不可靠，改 `KSU_HOOK_MODE=manual` |
+| `fatal error: 'linux/static_call.h' file not found` | SukiSU-Ultra `builtin` 树里有一个无用的无条件 include（5.10 才有的头文件），脚本会在 5.10 以下内核上自动移除 |
 | 模块挂载卸载不掉 | 5.9 以下内核需要 `ENABLE_PATH_UMOUNT=true` |
 | 找不到 defconfig | `KERNEL_CONFIG` 写错，日志会列出可用的 defconfig |
 
