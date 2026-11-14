@@ -42,10 +42,10 @@ ksu_registry() {
 		# 'main' is the modular v4 tree; 'builtin' is the non-GKI/source-
 		# integrated tree and is the one carrying the builtin integration.
 		echo "https://github.com/SukiSU-Ultra/SukiSU-Ultra|main|KernelSU|main|builtin|builtin|SukiSU-Ultra" ;;
-	resukisu)
-		# Re-fork aimed at legacy/non-GKI kernels.
-		# 2026/10/6 日 由 ReSukiSU 改名成 BakaSU
-		echo "https://github.com/ReSukiSU/ReSukiSU|main|KernelSU|main|main|-|ReSukiSU" ;;
+	bakasu | resukisu)
+		# BakaSU, renamed from ReSukiSU on 2026-10-06. The old variant name
+		# stays accepted so existing configs keep building.
+		echo "https://github.com/Baka-SU/BakaSU|main|KernelSU|main|main|-|BakaSU" ;;
 	rsuntk)
 		# RKSU. Its current setup.sh can fail to checkout a branch such as
 		# "main" in a fresh clone, so this variant uses the installer below.
@@ -61,10 +61,10 @@ ksu_field() {
 	ksu_registry "$1" | cut -d'|' -f"$2"
 }
 
-# ReSukiSU's setup.sh checks out 'main' when given no argument, while every
+# BakaSU's setup.sh checks out 'main' when given no argument, while every
 # other variant checks out the latest tag.
 ksu_default_is_branch() {
-	[ "$1" = "resukisu" ]
+	[ "$1" = "bakasu" ] || [ "$1" = "resukisu" ]
 }
 
 # --------------------------------------------------------- RKSU installer ----
@@ -448,8 +448,8 @@ ksu_hook_configs() {
 				kconf_enable "$defconfig" CONFIG_KSU_MANUAL_HOOK
 				;;
 
-			resukisu)
-				# ReSukiSU's non-GKI static export check requires the
+			bakasu | resukisu)
+				# BakaSU's non-GKI static export check requires the
 				# complete kallsyms table unless internal SELinux symbols
 				# are exported manually by the vendor tree.
 				kconf_set_many "$defconfig" \
@@ -476,8 +476,9 @@ ksu_hook_configs() {
 		;;
 
 	tracepoint)
-		[ "$variant" = "resukisu" ] || [ "$variant" = "sukisu-ultra" ] \
-			|| warn "hook mode 'tracepoint' is only declared by ReSukiSU/SukiSU-Ultra; ignoring for ${variant}"
+		[ "$variant" = "bakasu" ] || [ "$variant" = "resukisu" ] ||
+			[ "$variant" = "sukisu-ultra" ] \
+			|| warn "hook mode 'tracepoint' is only declared by BakaSU/SukiSU-Ultra; ignoring for ${variant}"
 
 		kconf_enable "$defconfig" CONFIG_KSU_TRACEPOINT_HOOK
 		;;

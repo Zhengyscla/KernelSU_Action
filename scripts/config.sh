@@ -164,7 +164,7 @@ apply_legacy_bridge() {
 	if [ "${CFG[KSU_VARIANT]}" = "none" ] && is_true "$legacy_enable"; then
 		CFG[KSU_VARIANT]="kernelsu"
 		warn "config.env uses the legacy ENABLE_KERNELSU flag; treating it as KSU_VARIANT=kernelsu."
-		warn "Set KSU_VARIANT explicitly to pick a fork (kernelsu-next, sukisu-ultra, resukisu, ...)."
+		warn "Set KSU_VARIANT explicitly to pick a fork (kernelsu-next, sukisu-ultra, bakasu, ...)."
 	fi
 
 	# APPLY_KSU_PATCH used to mean "run the bundled sed script to add manual
@@ -194,7 +194,7 @@ validate() {
 	esac
 
 	case "${CFG[KSU_VARIANT]}" in
-		none | kernelsu | kernelsu-next | sukisu-ultra | resukisu | rsuntk | backslashxx) ;;
+		none | kernelsu | kernelsu-next | sukisu-ultra | bakasu | resukisu | rsuntk | backslashxx) ;;
 		*) _err "unknown KSU_VARIANT '${CFG[KSU_VARIANT]}'" ;;
 	esac
 

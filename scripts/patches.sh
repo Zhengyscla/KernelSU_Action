@@ -300,6 +300,53 @@ hide_stuff_apply() {
 	endgroup
 }
 
+# drop_path_umount_section PATCH OUT -- copy PATCH to OUT without the
+# fs/namespace.c section, but only when that section adds nothing beyond the
+# path_umount() backport.
+#
+# SukiSU_patch's pre-GKI hook patches bundle the same can_umount()/path_umount()
+# code that path_umount_apply() inserts. On vendor trees whose namespace.c has
+# drifted from upstream (extra MNT_LOCKED handling, different line numbers) the
+# hunk applies with fuzz and lands before may_mount(), so the kernel ends up
+# with two definitions and an implicit may_mount() declaration. Since we insert
+# a correctly placed copy ourselves, drop theirs.
+drop_path_umount_section() {
+	local src=$1 dst=$2 target=${3:-fs/namespace.c}
+	awk -v target="$target" '
+		function flush() {
+			if (n > 0 && keep) for (i = 1; i <= n; i++) print buf[i]
+			n = 0
+		}
+		BEGIN { n = 0; keep = 1 }
+		/^--- / {
+			flush()
+			n = 1; buf[n] = $0; keep = 1
+			target_hit = (index($0, target) > 0)
+			has_backport = 0; has_other = 0
+			next
+		}
+		{
+			if (n == 0) { print; next }
+			buf[++n] = $0
+			if (target_hit && $0 ~ /^\+/) {
+				if ($0 ~ /(static )?int path_umount[[:space:]]*\(/) has_backport = 1
+				if ($0 ~ /ksu_/) has_other = 1
+			}
+			if (target_hit && has_backport && !has_other) keep = 0
+		}
+		END { flush() }
+	' "$src" >"$dst"
+}
+
+assert_single_path_umount() {
+	local ns="${KERNEL_DIR}/fs/namespace.c" n=0
+	[ -f "$ns" ] || return 0
+	n=$(grep -cE '^(static )?int path_umount' "$ns" || true)
+	if [ "${n:-0}" -gt 1 ]; then
+		die "fs/namespace.c defines path_umount() ${n} times; a hook patch duplicated the backport"
+	fi
+}
+
 # Manual/syscall hook patches for pre-GKI trees, used when the fork expects the
 # hooks to already exist in the kernel source rather than hooking via kprobes.
 hooks_patch_apply() {
@@ -308,8 +355,9 @@ hooks_patch_apply() {
 
 	group "Applying manual syscall hooks (kernel ${kver})"
 
-	# ReSukiSU publishes scope-minimised hook patches keyed by kernel version.
-	if [ "$variant" = "resukisu" ]; then
+	# BakaSU (formerly ReSukiSU) publishes scope-minimised hook patches keyed
+	# by kernel version. The patch repo still lives under the old org name.
+	if [ "$variant" = "bakasu" ] || [ "$variant" = "resukisu" ]; then
 		local dir="${WORKSPACE}/ReSukiSU_Patches"
 		[ -d "$dir" ] || retry 3 git clone -q --depth=1 \
 			https://github.com/ReSukiSU/ReSukiSU_Patches.git "$dir" || true
@@ -317,7 +365,7 @@ hooks_patch_apply() {
 		if [ -f "$p" ]; then
 			( cd "$KERNEL_DIR" && apply_patch "$p" 1 ) && { endgroup; return 0; }
 		else
-			info "ReSukiSU ships no scope-minimized patch for kernel ${kver}"
+			info "BakaSU ships no scope-minimized patch for kernel ${kver}"
 		fi
 	fi
 
@@ -327,7 +375,23 @@ hooks_patch_apply() {
 		dir=$(sukisu_patch_dir)
 		for p in "${dir}/${kver}/"*hook*.patch "${dir}/hooks/syscall_hooks.patch"; do
 			[ -f "$p" ] || continue
-			if ( cd "$KERNEL_DIR" && apply_patch "$p" 1 ); then endgroup; return 0; fi
+			local use=$p filtered=
+			if grep -qE '^(static )?int path_umount' "${KERNEL_DIR}/fs/namespace.c" 2>/dev/null; then
+				filtered=$(mktemp)
+				drop_path_umount_section "$p" "$filtered" "fs/namespace.c"
+				if ! grep -q '^@@' "$filtered"; then
+					info "$(basename "$p") only carries the path_umount() backport; already present, skipping"
+					rm -f "$filtered"
+					continue
+				fi
+				info "removed the path_umount() hunk from $(basename "$p") (backport already present)"
+				use=$filtered
+			fi
+			if ( cd "$KERNEL_DIR" && apply_patch "$use" 1 ); then
+				if [ -n "$filtered" ]; then rm -f "$filtered"; fi
+				endgroup; return 0
+			fi
+			if [ -n "$filtered" ]; then rm -f "$filtered"; fi
 		done
 	fi
 
@@ -383,6 +447,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 			if [ "${KSU_VARIANT:-none}" != "none" ] &&
 			   [ "${KSU_HOOK_MODE_RESOLVED:-}" = "manual" ]; then
 				hooks_patch_apply
+				assert_single_path_umount
 			fi
 
 			if is_true "${ENABLE_SUSFS:-false}";      then susfs_apply;      fi
