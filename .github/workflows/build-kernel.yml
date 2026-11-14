@@ -25,6 +25,7 @@ on:
           - kernelsu
           - kernelsu-next
           - sukisu-ultra
+          - bakasu
           - resukisu
           - rsuntk
           - backslashxx

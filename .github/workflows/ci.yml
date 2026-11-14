@@ -64,7 +64,7 @@ jobs:
           https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh
           https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh
           https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh
-          https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh
+          https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh
           https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh
           https://raw.githubusercontent.com/backslashxx/KernelSU/master/kernel/setup.sh
           https://gitlab.com/simonpunk/susfs4ksu
