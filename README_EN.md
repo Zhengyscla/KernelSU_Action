@@ -2,6 +2,11 @@
 
 # KernelSU Action
 
+> **This fork is trimmed down for SM-T560NU (gtelwifiue / msm8916, Linux 3.10.108).**
+> It keeps only the backslashxx KernelSU fork, the path_umount backport and direct
+> boot.img repacking, and produces just `zImage` and `boot.img`. The sections below
+> about other KernelSU variants, SUSFS, KPM and AnyKernel3 no longer apply.
+
 A GitHub Actions workflow that integrates KernelSU (and its forks), SUSFS and the common kernel patches into an Android kernel, and produces a flashable AnyKernel3 package.
 
 Assumes some familiarity with Android kernels.

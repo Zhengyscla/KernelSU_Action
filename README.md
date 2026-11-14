@@ -2,6 +2,11 @@
 
 # KernelSU Action
 
+> **本 fork 已裁剪为 SM-T560NU（gtelwifiue / msm8916，Linux 3.10.108）专用构建。**
+> 只保留 backslashxx KernelSU、path_umount 回移和 boot.img 重打包，产物只有
+> `zImage` 与 `boot.img`。下文中其它 KernelSU 变体、SUSFS、KPM、AnyKernel3
+> 等内容已不再适用。
+
 用 GitHub Actions 为 Android 内核集成 KernelSU（及其各种分支）、SUSFS 与常用补丁，并产出可刷入的 AnyKernel3 包。
 
 需要一定的内核与 Android 基础知识。
