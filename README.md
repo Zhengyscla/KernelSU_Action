@@ -42,19 +42,26 @@
 | `none` | — | 不集成 root，纯编译内核 |
 | `kernelsu` | [tiann/KernelSU](https://github.com/tiann/KernelSU) | 官方原版。**v1.0 起不再支持 Non-GKI**，旧内核会自动锁定到 `v0.9.5` |
 | `kernelsu-next` | [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) | 分支为 `dev`（默认）/ `stable` / `legacy`；旧内核请用 `legacy` |
-| `sukisu-ultra` | [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) | `main` 为 v4 模块化树（支持 KPM）；`builtin` 为源码内置树，且是**唯一自带 SUSFS** 的分支 |
-| `bakasu` | [BakaSU](https://github.com/Baka-SU/BakaSU) | 原 ReSukiSU（2026-10 改名），SukiSU-Ultra 的再分支，主打旧内核/Non-GKI 兼容与多管理器支持。旧值 `resukisu` 仍可用 |
+| `sukisu-nova` | [SukiSU-Nova](https://github.com/SukiSU-Nova/SukiSU-Nova) | 原 SukiSU-Ultra（2026-11 改名）。`main` 为 v3 模块化树（支持 KPM）；`builtin` 为旧式源码内置树且自带 SUSFS；`builtin-new` 为新式内置树，自带 syscall-table/kprobe hook 后端，适合旧内核 |
+| `bakasu` | [BakaSU](https://github.com/Baka-SU/BakaSU) | 原 ReSukiSU（2026-10 改名），SukiSU-Nova 的再分支，主打旧内核/Non-GKI 兼容与多管理器支持 |
 | `rsuntk` | [rsuntk/KernelSU](https://github.com/rsuntk/KernelSU) | 即 RKSU |
 | `backslashxx` | [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) | 以手动 hook 为主 |
 
 `KSU_REF` 填分支名、tag 或 commit。**留空**则按你的内核版本自动挑一个合适的引用。
+
+### 从 SukiSU-Ultra 迁移
+
+`KSU_VARIANT=sukisu-ultra` 会自动映射为 `sukisu-nova`，旧配置无需改动。注意两点：
+
+- 内核与管理器必须来自同一代 Nova：旧 SukiSU-Ultra 内核配 Nova 管理器会出现“更新 App Profile 失败、无法激活模块”。
+- Nova 的旧式 `builtin` 树依赖 `kernel/reboot.c` 里的 supercall 入口。上游补丁用 `CONFIG_KSU_MANUAL_HOOK` 守卫这段代码，但 `builtin` 的 Kconfig 并不声明该符号，直接套用会把调用编译掉。脚本会先把守卫改写为 `CONFIG_KSU` 再打补丁，保证管理器能拿到内核 fd。
 
 > **为什么必须校验 `KSU_REF`**
 >
 > 所有分支的 `setup.sh` 结尾都是
 > `git checkout "$1" || echo "[-] Checkout default branch"`。
 > 也就是说，填一个不存在的分支名**不会报错**，只会悄悄留在默认分支上。
-> 比如按旧文档给 SukiSU-Ultra 传 `susfs-main`（该分支实际上并不存在），
+> 比如按旧文档给 SukiSU-Nova 传 `susfs-main`（该分支实际上并不存在），
 > 构建会"成功"，但产出的内核根本没有 SUSFS。
 > 本 Action 会在调用 `setup.sh` **之前**校验引用是否存在，不存在就直接失败并列出可用分支。
 
@@ -73,9 +80,9 @@
 
 自动映射不对时用 `SUSFS_BRANCH` 手动指定（例如你的 5.10 树其实基于 android13）。
 
-流程为：拷贝 `fs/susfs.c` 与 `include/linux/susfs*.h` → 打内核侧 `50_add_susfs_in_*.patch` → 打 KernelSU 侧 `10_enable_susfs_for_ksu.patch`。最后一步在所选分支**自带 SUSFS 时会自动跳过**（例如 SukiSU-Ultra 的 `builtin`）。
+流程为：拷贝 `fs/susfs.c` 与 `include/linux/susfs*.h` → 打内核侧 `50_add_susfs_in_*.patch` → 打 KernelSU 侧 `10_enable_susfs_for_ksu.patch`。最后一步在所选分支**自带 SUSFS 时会自动跳过**（例如 SukiSU-Nova 的 `builtin`）。
 
-> **已知坑**：susfs4ksu 的 Non-GKI 分支自 2025 年初就没再更新，仍然针对 KernelSU 的旧扁平目录结构。而多数分支此后都重构成了模块化的 `kernel/` 目录，因此"旧内核 + 新分支 + SUSFS"这个组合的 KernelSU 侧补丁可能打不上。遇到这种情况，改用 `KSU_VARIANT=sukisu-ultra` + `KSU_REF=builtin`（自带 SUSFS，不需要那个补丁）最省事。构建失败时日志里会直接给出这段提示。
+> **已知坑**：susfs4ksu 的 Non-GKI 分支自 2025 年初就没再更新，仍然针对 KernelSU 的旧扁平目录结构。而多数分支此后都重构成了模块化的 `kernel/` 目录，因此"旧内核 + 新分支 + SUSFS"这个组合的 KernelSU 侧补丁可能打不上。遇到这种情况，改用 `KSU_VARIANT=sukisu-nova` + `KSU_REF=builtin`（自带 SUSFS，不需要那个补丁）最省事。构建失败时日志里会直接给出这段提示。
 
 ## path_umount
 
@@ -90,7 +97,7 @@
 | 选项 | 作用 |
 | --- | --- |
 | `ENABLE_HIDE_STUFF` | 额外清除内核中的 KernelSU 痕迹 |
-| `ENABLE_KPM` | SukiSU-Ultra 的 Kernel Patch Module 支持，编译后对 Image 执行 `patch_linux`。仅 `sukisu-ultra` + `arm64` |
+| `ENABLE_KPM` | SukiSU-Nova 的 Kernel Patch Module 支持，编译后对 Image 执行 `patch_linux`。仅 `sukisu-nova` + `arm64` |
 | `KSU_HOOK_MODE` | hook 方式：`auto`（5.10+ 用 kprobes，更旧的用 manual）/ `kprobes` / `manual` / `tracepoint` / `syscall` / `none` |
 
 旧内核上 kprobes 经常是"KernelSU 装上了但 su 没反应"的元凶，此时用 `manual`。
@@ -126,8 +133,18 @@ AOSP 的 clang 预编译仓库有个陷阱：每个 `kernel-build` 分支都会�
 | `DISABLE_LTO` | LTO 会优化内核，但有时会导致编译错误 |
 | `DISABLE_CC_WERROR` | 修复某些内核把 KernelSU 的告警当错误的问题 |
 | `EXTRA_DEFCONFIG` | 任意追加 defconfig 行，如 `CONFIG_TMPFS_XATTR=y` |
-| `BUILD_BOOT_IMG` + `SOURCE_BOOT_IMAGE` | 重新打包 boot.img，需要提供同设备同 ROM 的可开机镜像直链 |
+| `BUILD_BOOT_IMG` + `SOURCE_BOOT_IMAGE` | 重新打包 boot.img。`SOURCE_BOOT_IMAGE` 可以是同设备同 ROM 的可开机镜像 URL，也可以是仓库内路径（如 `boot/boot.img`） |
 | `KSU_EXPECTED_SIZE` / `KSU_EXPECTED_HASH` | 自定义管理器签名，用 `ksud debug get-sign <apk>` 获取 |
+
+### 直接输出 boot.img
+
+把 `BUILD_BOOT_IMG=true`、`SOURCE_BOOT_IMAGE=boot/boot.img` 写进配置后，每次构建都会在 AnyKernel3 之外额外产出一个 `boot.img` artifact：
+
+1. 解包 `SOURCE_BOOT_IMAGE`，保留原镜像的 cmdline、header version、ramdisk、dtb 等字段；
+2. 把本次编译出的 `KERNEL_IMAGE_NAME` 替换进去；
+3. 用原来的参数重新打包，直接输出可刷入的 `boot.img`。
+
+> 需要与目标设备、目标 ROM 完全一致的原始 boot.img。产物没有 AVB 签名（源镜像的 AVB footer 会被丢弃），因此需要解锁 bootloader 或关闭 AVB 校验。若源镜像的 header v2 自带独立 dtb，而 `KERNEL_IMAGE_NAME` 是 `Image.gz-dtb`，产物会同时包含两份 dtb（新增的追加在 gzip 流之后，通常无影响）；启动异常时可改用 `Image.gz` 以保留原 dtb。
 
 ## 兼容旧配置
 
@@ -139,6 +156,8 @@ AOSP 的 clang 预编译仓库有个陷阱：每个 `kernel-build` 分支都会�
 | `KERNELSU_TAG` | `KSU_REF` |
 | `APPLY_KSU_PATCH=true` | `KSU_HOOK_MODE=manual` |
 | `DISABLE-LTO` | `DISABLE_LTO` |
+| `KSU_VARIANT=resukisu` | `KSU_VARIANT=bakasu` |
+| `KSU_VARIANT=sukisu-ultra` | `KSU_VARIANT=sukisu-nova` |
 
 ## 仓库结构
 
@@ -156,7 +175,8 @@ scripts/
   build.sh           defconfig 注入与编译
   package.sh         AnyKernel3 / boot.img
 patches/
-  legacy_ksu_hooks.sh  旧版 sed hook 脚本（manual 模式的兜底）
+  legacy_ksu_hooks.sh        旧版 sed hook 脚本（manual 模式的兜底）
+  ksu_reboot_supercall.patch supercall 入口的兜底补丁（上游补丁不可用时）
 ```
 
 `build-kernel.yml` 也可以被 `workflow_call` 复用，方便你为每台设备写一个极短的工作流。
@@ -169,11 +189,12 @@ patches/
 | `ref '...' does not exist` | `KSU_REF` 填了不存在的分支，日志会列出可用分支 |
 | SUSFS 内核补丁打不上 | `SUSFS_BRANCH` 与内核版本不匹配，或该树已被改动过 |
 | KernelSU 装上了但 su 无反应 | 旧内核的 kprobes 不可靠，改 `KSU_HOOK_MODE=manual` |
-| `fatal error: 'linux/static_call.h' file not found` | SukiSU-Ultra `builtin` 树里有一个无用的无条件 include（5.10 才有的头文件），脚本会在 5.10 以下内核上自动移除 |
+| `fatal error: 'linux/static_call.h' file not found` | SukiSU-Nova `builtin` 树里有一个无用的无条件 include（5.10 才有的头文件），脚本会在 5.10 以下内核上自动移除 |
 | `fatal error: 'linux/susfs.h' file not found` | SukiSU 的 `CONFIG_KSU_SUSFS` 是 `default y`，`ENABLE_SUSFS=false` 时脚本会显式写入 `# CONFIG_KSU_SUSFS is not set` |
 | `access_ok` 宏参数错误 / `implicit declaration of 'kvcalloc'` | SukiSU builtin 把 KPM 的版本门槛写成了 4.4（实际需要 5.10），且 4.18 以下内核没有 `kvcalloc()`；脚本会自动修正门槛并补一个基于 `kvmalloc()` 的 shim |
-| 管理器显示"工作中"，但无法授予新应用 root、模块不生效 | SukiSU 的 per-version hook 补丁漏了 `kernel/reboot.c` 的 supercall 入口，管理器拿不到内核 fd；脚本会从 `scope_min_manual_hooks_v1.6.patch` 单独补上该 hunk，失败时直接中止构建 |
+| 管理器显示"工作中"，但无法授予新应用 root、模块不生效 / “更新 App Profile 失败” | `kernel/reboot.c` 缺少 supercall 入口，管理器拿不到内核 fd。Nova `builtin` 需要这个入口，但上游补丁用不存在的 `CONFIG_KSU_MANUAL_HOOK` 守卫；脚本会改写守卫后强制补上（上游补丁缺失时使用 `patches/ksu_reboot_supercall.patch`），失败时中止构建。另请确认内核与管理器同为 Nova |
 | 模块挂载卸载不掉 | 5.9 以下内核需要 `ENABLE_PATH_UMOUNT=true` |
+| 刷入 boot.img 后无法开机 | `SOURCE_BOOT_IMAGE` 必须与设备、ROM 完全一致；header v2 自带 dtb 时不要再用 `Image.gz-dtb`，可改用 `Image.gz` 保留原 dtb |
 | 找不到 defconfig | `KERNEL_CONFIG` 写错，日志会列出可用的 defconfig |
 
 ## 感谢
@@ -182,7 +203,7 @@ patches/
 - [AOSP](https://android.googlesource.com)
 - [KernelSU](https://github.com/tiann/KernelSU)
 - [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next)
-- [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra)
+- [SukiSU-Nova](https://github.com/SukiSU-Nova/SukiSU-Nova)
 - [BakaSU](https://github.com/Baka-SU/BakaSU)（原 ReSukiSU）
 - [susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu)
 - [SukiSU_patch](https://github.com/ShirkNeko/SukiSU_patch)
