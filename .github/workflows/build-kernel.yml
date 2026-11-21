@@ -9,9 +9,9 @@ on:
         required: false
         default: "config"
         type: choice
-        options: [config, none, backslashxx]
+        options: [config, none, backslashxx, sukisu-nova]
       ksu_ref:
-        description: "KernelSU branch/tag/commit (blank = master)"
+        description: "KernelSU branch/tag/commit (blank = variant default)"
         required: false
         default: ""
         type: string

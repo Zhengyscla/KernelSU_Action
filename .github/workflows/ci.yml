@@ -31,6 +31,33 @@ jobs:
       - name: Validate config
         run: CONFIG_ENV=config.env bash scripts/config.sh >/dev/null
 
+      - name: Validate SukiSU-Nova config
+        run: |
+          sed -e 's/^KSU_VARIANT=.*/KSU_VARIANT=sukisu-nova/' config.env > /tmp/nova.env
+          CONFIG_ENV=/tmp/nova.env GITHUB_ENV= bash scripts/config.sh >/dev/null
+
+          # 32-bit ARM cannot use SukiSU-Nova's 64-bit-only main/dev trees.
+          sed -e 's/^KSU_REF=.*/KSU_REF=main/' /tmp/nova.env > /tmp/nova-main.env
+          if CONFIG_ENV=/tmp/nova-main.env GITHUB_ENV= bash scripts/config.sh >/dev/null 2>&1; then
+            echo "expected KSU_REF=main to be rejected for ARCH=arm" >&2
+            exit 1
+          fi
+
+          # Variant dispatch and the post-install arm32 guard.
+          KERNEL_DIR=/tmp ARCH=arm GITHUB_ENV= \
+            bash -c '. scripts/kernelsu.sh; load_variant sukisu-nova; [ "$KSU_DEFAULT_REF" = builtin-new ]'
+
+          mkdir -p /tmp/ksu-ok/kernel /tmp/ksu-bad/kernel
+          printf 'config KSU_TAMPER_SYSCALL_TABLE\n\tbool "x"\n' > /tmp/ksu-ok/kernel/Kconfig
+          printf 'config KSU\n\tbool "x"\n' > /tmp/ksu-bad/kernel/Kconfig
+          KERNEL_DIR=/tmp ARCH=arm GITHUB_ENV= \
+            bash -c '. scripts/kernelsu.sh; verify_arm32_support /tmp/ksu-ok builtin-new'
+          if KERNEL_DIR=/tmp ARCH=arm GITHUB_ENV= \
+             bash -c '. scripts/kernelsu.sh; verify_arm32_support /tmp/ksu-bad builtin-new' 2>/dev/null; then
+            echo "expected the arm32 guard to reject a Kconfig without KSU_TAMPER_SYSCALL_TABLE" >&2
+            exit 1
+          fi
+
       - name: Check upstream endpoints are alive
         continue-on-error: true
         run: |
@@ -46,6 +73,8 @@ jobs:
             fi
           done <<'URLS'
           https://raw.githubusercontent.com/backslashxx/KernelSU/master/kernel/setup.sh
+          https://raw.githubusercontent.com/SukiSU-Nova/SukiSU-Nova/builtin-new/kernel/setup.sh
+          https://github.com/SukiSU-Nova/SukiSU-Nova
           https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9
           https://github.com/retiredtab/android_kernel_samsung_msm8916
           URLS
