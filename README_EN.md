@@ -58,7 +58,8 @@ listed above.
 > GCC 4.9+, syscall-table hooking); the older `builtin` uses a different hook
 > path without `KSU_TAMPER_SYSCALL_TABLE` and does not work here.
 > The build verifies that `KSU_TAMPER_SYSCALL_TABLE` exists after checkout and
-> fails with a clear message if the wrong ref was selected.
+> fails with a clear message if the wrong ref was selected. The small set of
+> arm32 source fixes needed for 3.10/GCC 4.9 is applied before compilation.
 >
 > Install the matching SukiSU-Nova manager (package `com.sukisu.nova`; its APK
 > ships the `armeabi-v7a` ksud and libkptools).

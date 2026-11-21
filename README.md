@@ -54,7 +54,8 @@
 > 根本没有 `CONFIG_ARM` 路径，不能用于本设备。面向老内核/arm32 的是
 > `builtin-new`（支持 Linux 3.0+、GCC 4.9+、syscall 表 hook）；较旧的 `builtin`
 > 是另一套 hook 实现，没有 `KSU_TAMPER_SYSCALL_TABLE`，不适用于本设备。
-> 构建脚本会在 checkout 后检查该选项是否存在，选错分支会直接失败并提示。
+> 构建脚本会在 checkout 后检查该选项是否存在，选错分支会直接失败并提示；
+> 3.10/GCC 4.9 下需要的少量 arm32 源码兼容修复会在编译前自动应用。
 >
 > 需要配套安装 SukiSU-Nova 管理器（包名 `com.sukisu.nova`；其 APK 内含
 > `armeabi-v7a` 的 ksud 与 libkptools）。
