@@ -58,6 +58,22 @@ jobs:
             exit 1
           fi
 
+      - name: Test SukiSU-Nova arm32 compat patch
+        run: |
+          src=/tmp/nova-src/KernelSU/kernel
+          mkdir -p "$src/downstream" "$src/extension"
+          printf '__attribute__((used, noinline))\n__attribute__((naked, used, noinline))\n' \
+            > "$src/downstream/slow_avc_audit_defs.h"
+          printf 'static DEFINE_RWLOCK(dynamic_manager_lock);\n' \
+            > "$src/extension/dynamic_manager.c"
+
+          KERNEL_DIR=/tmp/nova-src KSU_VARIANT=sukisu-nova GITHUB_ENV= \
+            bash scripts/patches.sh nova-compat
+
+          grep -q '__attribute__((used)) noinline' "$src/downstream/slow_avc_audit_defs.h"
+          grep -q '__attribute__((naked, used)) noinline' "$src/downstream/slow_avc_audit_defs.h"
+          grep -q 'static rwlock_t dynamic_manager_lock = ' "$src/extension/dynamic_manager.c"
+
       - name: Check upstream endpoints are alive
         continue-on-error: true
         run: |
