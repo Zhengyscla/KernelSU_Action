@@ -106,10 +106,54 @@ EOF
 	endgroup
 }
 
+# ------------------------------------------- SukiSU-Nova arm32 compat ---
+# builtin-new's arm32 paths were written against newer headers/compilers and
+# need two source fixes to build with GCC 4.9 on 3.10:
+#
+#  * `__attribute__((used, noinline))`: 3.10's compiler-gcc.h defines
+#    `noinline` as `__attribute__((noinline))`, so nesting it inside another
+#    attribute list is a syntax error. Move it to a following attribute.
+#  * `DEFINE_RWLOCK()`: 3.10 expands it to a compound-literal cast
+#    `(rwlock_t) {...}`, which GCC 4.9 rejects as a non-constant initializer
+#    under the -std=gnu11 the tree uses for ksu.o. This kernel has lock
+#    debugging off, so the plain initializer is equivalent.
+sukisu_nova_compat() {
+	local ksu="${KERNEL_DIR}/KernelSU/kernel"
+	local avc="${ksu}/downstream/slow_avc_audit_defs.h"
+	local dm="${ksu}/extension/dynamic_manager.c"
+
+	group "Applying SukiSU-Nova arm32/GCC 4.9 fixes"
+	[ -f "$avc" ] || die "missing ${avc#"${KERNEL_DIR}/"}"
+	[ -f "$dm" ] || die "missing ${dm#"${KERNEL_DIR}/"}"
+
+	sed -i \
+		-e 's/__attribute__((used, noinline))/__attribute__((used)) noinline/' \
+		-e 's/__attribute__((naked, used, noinline))/__attribute__((naked, used)) noinline/' \
+		"$avc"
+	sed -i 's|^static DEFINE_RWLOCK(dynamic_manager_lock);|static rwlock_t dynamic_manager_lock = { .raw_lock = __ARCH_RW_LOCK_UNLOCKED, RW_DEP_MAP_INIT(dynamic_manager_lock) };|' "$dm"
+
+	# These replacements are what make the build possible; a silent miss would
+	# only surface as a confusing compile error much later.
+	if grep -q '__attribute__((used, noinline))\|__attribute__((naked, used, noinline))' "$avc"; then
+		die "noinline attribute fix did not apply to slow_avc_audit_defs.h"
+	fi
+	if grep -q '^static DEFINE_RWLOCK(dynamic_manager_lock);' "$dm"; then
+		die "DEFINE_RWLOCK fix did not apply to dynamic_manager.c"
+	fi
+
+	ok "patched arm32 trampoline attributes and dynamic_manager rwlock"
+	summary "| SukiSU-Nova compat | noinline attributes + rwlock initializer |"
+	endgroup
+}
+
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 	case "${1:-all}" in
 		path_umount) path_umount_apply ;;
+		nova-compat) sukisu_nova_compat ;;
 		all)
+			if [ "${KSU_VARIANT:-none}" = "sukisu-nova" ]; then
+				sukisu_nova_compat
+			fi
 			# path_umount is only needed when KernelSU is built in.
 			if [ "${KSU_VARIANT:-none}" != "none" ] &&
 			   is_true "${ENABLE_PATH_UMOUNT:-false}"; then
