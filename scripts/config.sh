@@ -133,9 +133,20 @@ validate() {
 	esac
 
 	case "${CFG[KSU_VARIANT]}" in
-		none | backslashxx) ;;
-		*) _err "unknown KSU_VARIANT '${CFG[KSU_VARIANT]}' (supported: none, backslashxx)" ;;
+		none | backslashxx | sukisu-nova) ;;
+		*) _err "unknown KSU_VARIANT '${CFG[KSU_VARIANT]}' (supported: none, backslashxx, sukisu-nova)" ;;
 	esac
+
+	# SukiSU-Nova's main/dev tree has no 32-bit ARM hooks. kernelsu.sh checks
+	# the checked-out Kconfig as well, but catching the common branch names
+	# here fails in seconds instead of after the toolchain/source downloads.
+	if [ "${CFG[KSU_VARIANT]}" = "sukisu-nova" ] && [ "${CFG[ARCH]}" = "arm" ]; then
+		case "${CFG[KSU_REF]}" in
+			main | dev)
+				_err "SukiSU-Nova '${CFG[KSU_REF]}' is 64-bit only; use KSU_REF=builtin-new for ARCH=arm"
+				;;
+		esac
+	fi
 
 	if is_true "${CFG[BUILD_BOOT_IMG]}" && [ -z "${CFG[SOURCE_BOOT_IMAGE]}" ]; then
 		_err "BUILD_BOOT_IMG=true requires SOURCE_BOOT_IMAGE"

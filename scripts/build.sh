@@ -23,8 +23,8 @@ prepare_defconfig() {
 	cp "$DEFCONFIG_PATH" "${WORKSPACE}/defconfig.orig"
 
 	if [ "${KSU_VARIANT:-none}" != "none" ]; then
-		# backslashxx on 32-bit ARM uses syscall-table tampering; no kprobes and
-		# no source-level hooks are needed.
+		# Both supported forks use syscall-table tampering on 32-bit ARM; no
+		# kprobes and no source-level hooks are needed.
 		kconf_enable "$DEFCONFIG_PATH" CONFIG_KSU
 		kconf_enable "$DEFCONFIG_PATH" CONFIG_KSU_TAMPER_SYSCALL_TABLE
 	fi
@@ -143,6 +143,14 @@ build_kernel() {
 	if [ "${KSU_VARIANT:-none}" != "none" ]; then
 		grep -q '^CONFIG_KSU=y' "${OUT}/.config" \
 			|| die "CONFIG_KSU was dropped by Kconfig (unmet dependency, e.g. SELinux), refusing to build without KernelSU."
+	fi
+
+	# 32-bit ARM has no usable kprobes/manual hook path here: sucompat comes
+	# from the syscall table. If Kconfig silently drops the option the kernel
+	# still builds and boots, and root simply does nothing.
+	if [ "${KSU_VARIANT:-none}" != "none" ] && [ "${ARCH}" = "arm" ]; then
+		grep -q '^CONFIG_KSU_TAMPER_SYSCALL_TABLE=y' "${OUT}/.config" \
+			|| die "CONFIG_KSU_TAMPER_SYSCALL_TABLE was dropped by Kconfig, refusing to build a kernel whose su cannot work."
 	fi
 
 	info "make ${args}"
