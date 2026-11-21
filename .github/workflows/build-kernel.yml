@@ -24,9 +24,8 @@ on:
           - none
           - kernelsu
           - kernelsu-next
-          - sukisu-ultra
+          - sukisu-nova
           - bakasu
-          - resukisu
           - rsuntk
           - backslashxx
       ksu_ref:
@@ -59,7 +58,7 @@ on:
         type: choice
         options: [config, "true", "false"]
       kpm:
-        description: "Enable KPM (SukiSU-Ultra only)"
+        description: "Enable KPM (SukiSU-Nova only)"
         required: false
         default: "config"
         type: choice
@@ -231,6 +230,7 @@ jobs:
         with:
           name: boot${{ env.LOCALVERSION }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
           path: kernel_workspace/boot.img
+          if-no-files-found: error
 
   # Publishing is a separate job so the build itself runs with a read-only
   # token; only this job gets contents:write, and only when asked for.
