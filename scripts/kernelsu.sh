@@ -26,6 +26,7 @@ load_variant() {
 			KSU_DEFAULT_REF="master"
 			KSU_DISPLAY_NAME="backslashxx KernelSU"
 			KSU_UPLOAD_TAG="backslashxx"
+			KSU_PRECLONE="false"
 			;;
 		sukisu-nova)
 			KSU_REPO="https://github.com/SukiSU-Nova/SukiSU-Nova"
@@ -35,6 +36,10 @@ load_variant() {
 			KSU_DEFAULT_REF="builtin-new"
 			KSU_DISPLAY_NAME="SukiSU-Nova"
 			KSU_UPLOAD_TAG="sukisu-nova"
+			# builtin-new's setup.sh runs `git clone <url>` without a target, so
+			# git creates SukiSU-Nova/ and the following `cd KernelSU` fails.
+			# Pre-clone into the path the script expects.
+			KSU_PRECLONE="true"
 			;;
 		*)
 			die "unsupported KSU_VARIANT '$1' (supported: none, backslashxx, sukisu-nova)"
@@ -63,6 +68,21 @@ verify_arm32_support() {
 	fi
 }
 
+# ksu_preclone -- work around installers that clone without a target directory
+# and then cd into a hardcoded path. Creating that path up front makes their
+# `test -d KernelSU || git clone` guard skip the broken clone.
+ksu_preclone() {
+	is_true "${KSU_PRECLONE:-false}" || return 0
+
+	local dest="${KERNEL_DIR}/KernelSU"
+	[ -d "$dest" ] && return 0
+
+	info "pre-cloning ${KSU_REPO} into KernelSU/"
+	rm -rf "$dest"
+	retry 3 git clone -q "$KSU_REPO" "$dest" \
+		|| die "failed to clone ${KSU_REPO}"
+}
+
 ksu_install() {
 	local requested_ref=${1-}
 	load_variant "${KSU_VARIANT:-backslashxx}"
@@ -83,6 +103,8 @@ ksu_install() {
        setup.sh would silently fall back to the default branch.
        Available branches: $(git ls-remote --heads "$KSU_REPO" 2>/dev/null | awk '{print $2}' | sed 's@refs/heads/@@' | grep -v dependabot | tr '\n' ' ')"
 	ok "ref '${ref}' exists"
+
+	ksu_preclone
 
 	info "running ${KSU_SETUP_URL}"
 	(
