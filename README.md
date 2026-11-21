@@ -2,11 +2,10 @@
 
 # KernelSU Action
 
-> **注意：本 fork 已裁剪为 SM-T560NU（gtelwifiue / msm8916，Linux 3.10.108）专用构建。**
-> **请勿轻易 fork 本分支进行其它设备构建！**
-> 只保留 backslashxx KernelSU、path_umount 回移和 boot.img 重打包，产物只有
-> `zImage` 与 `boot.img`。下文中其它 KernelSU 变体、SUSFS、KPM、AnyKernel3
-> 等内容已不再适用。
+> **本 fork 已裁剪为 SM-T560NU（gtelwifiue / msm8916，Linux 3.10.108）专用构建。**
+> KernelSU 侧支持 `backslashxx` 与 `sukisu-nova`（默认 `builtin-new`），外加
+> path_umount 回移和 boot.img 重打包，产物只有 `zImage` 与 `boot.img`。
+> SUSFS、KPM、AnyKernel3 等内容不适用于本设备。
 
 用 GitHub Actions 为 Android 内核集成 KernelSU（及其各种分支）、SUSFS 与常用补丁，并产出可刷入的 AnyKernel3 包。
 
@@ -30,8 +29,8 @@
 1. Fork 本仓库。
 2. 编辑 [`config.env`](config.env)，至少填好 `KERNEL_SOURCE`、`KERNEL_SOURCE_BRANCH`、`KERNEL_CONFIG`、`KERNEL_IMAGE_NAME`。
 3. 打开 `Actions` → `Build Kernel` → `Run workflow`。
-4. 在弹出的表单里选择 KernelSU 分支、是否启用 SUSFS 等，然后运行。
-5. 构建完成后在 Artifacts 下载 AnyKernel3 压缩包，在 Recovery 中刷入。
+4. 在弹出的表单里选择 KernelSU 变体（以及可选的 `KSU_REF`），然后运行。
+5. 构建完成后在 Artifacts 下载 `zImage` 与 `boot.img`，刷入对应分区。
 
 表单里的下拉框默认都是 `config`，意思是"用配置文件里写的值"。只有你主动改成别的值时，它才会**覆盖** `config.env` 中的同名配置——所以日常调参不需要提交任何改动，而直接点运行也一定是按你配置文件里的设定来构建，不会因为某个开关默认关着就把你配置里开启的功能悄悄关掉。
 
@@ -39,27 +38,32 @@
 
 ## 支持的 KernelSU 分支
 
-用 `KSU_VARIANT` 选择：
+本 fork 只保留两个变体，用 `KSU_VARIANT` 选择：
 
-| 取值 | 项目 | 说明 |
-| --- | --- | --- |
-| `none` | — | 不集成 root，纯编译内核 |
-| `kernelsu` | [tiann/KernelSU](https://github.com/tiann/KernelSU) | 官方原版。**v1.0 起不再支持 Non-GKI**，旧内核会自动锁定到 `v0.9.5` |
-| `kernelsu-next` | [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) | 分支为 `dev`（默认）/ `stable` / `legacy`；旧内核请用 `legacy` |
-| `sukisu-ultra` | [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) | `main` 为 v4 模块化树（支持 KPM）；`builtin` 为源码内置树，且是**唯一自带 SUSFS** 的分支 |
-| `resukisu` | [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU) | SukiSU-Ultra 的再分支，主打旧内核/Non-GKI 兼容与多管理器支持 |
-| `rsuntk` | [rsuntk/KernelSU](https://github.com/rsuntk/KernelSU) | 即 RKSU |
-| `backslashxx` | [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) | 以手动 hook 为主 |
+| 取值 | 项目 | 默认 `KSU_REF` | 说明 |
+| --- | --- | --- | --- |
+| `none` | — | — | 不集成 root，纯编译内核 |
+| `backslashxx` | [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) | `master` | syscall 表 hook，支持 32 位 ARM |
+| `sukisu-nova` | [SukiSU-Nova](https://github.com/SukiSU-Nova/SukiSU-Nova) | `builtin-new` | `builtin-new` 支持 32 位 ARM；`main`/`dev` 只支持 64 位 |
 
-`KSU_REF` 填分支名、tag 或 commit。**留空**则按你的内核版本自动挑一个合适的引用。
+`KSU_REF` 填分支名、tag 或 commit。**留空**则使用上表中的默认分支。
+
+> **SukiSU-Nova 的分支选择**
+>
+> SukiSU-Nova 的 `main`/`dev` 是 64 位专用树：hook 只编译 ARM64/x86_64/RISCV，
+> 根本没有 `CONFIG_ARM` 路径，不能用于本设备。面向老内核/arm32 的是
+> `builtin-new`（支持 Linux 3.0+、GCC 4.9+、syscall 表 hook）；较旧的 `builtin`
+> 是另一套 hook 实现，没有 `KSU_TAMPER_SYSCALL_TABLE`，不适用于本设备。
+> 构建脚本会在 checkout 后检查该选项是否存在，选错分支会直接失败并提示。
+>
+> 需要配套安装 SukiSU-Nova 管理器（包名 `com.sukisu.nova`；其 APK 内含
+> `armeabi-v7a` 的 ksud 与 libkptools）。
 
 > **为什么必须校验 `KSU_REF`**
 >
 > 所有分支的 `setup.sh` 结尾都是
 > `git checkout "$1" || echo "[-] Checkout default branch"`。
 > 也就是说，填一个不存在的分支名**不会报错**，只会悄悄留在默认分支上。
-> 比如按旧文档给 SukiSU-Ultra 传 `susfs-main`（该分支实际上并不存在），
-> 构建会"成功"，但产出的内核根本没有 SUSFS。
 > 本 Action 会在调用 `setup.sh` **之前**校验引用是否存在，不存在就直接失败并列出可用分支。
 
 ## SUSFS
@@ -169,6 +173,7 @@ patches/
 | --- | --- |
 | `clang: not found` / 工具链目录是空的 | `CLANG_BRANCH` 与 `CLANG_VERSION` 组合无效，见上表 |
 | `ref '...' does not exist` | `KSU_REF` 填了不存在的分支，日志会列出可用分支 |
+| `SukiSU-Nova '...' has no KSU_TAMPER_SYSCALL_TABLE` | 选了 64 位专用的 `main`/`dev`（或旧的 `builtin`）；arm32 请用 `KSU_REF=builtin-new` |
 | SUSFS 内核补丁打不上 | `SUSFS_BRANCH` 与内核版本不匹配，或该树已被改动过 |
 | KernelSU 装上了但 su 无反应 | 旧内核的 kprobes 不可靠，改 `KSU_HOOK_MODE=manual` |
 | 模块挂载卸载不掉 | 5.9 以下内核需要 `ENABLE_PATH_UMOUNT=true` |
@@ -181,6 +186,7 @@ patches/
 - [KernelSU](https://github.com/tiann/KernelSU)
 - [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next)
 - [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra)
+- [SukiSU-Nova](https://github.com/SukiSU-Nova/SukiSU-Nova)
 - [ReSukiSU](https://github.com/ReSukiSU/ReSukiSU)
 - [susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu)
 - [SukiSU_patch](https://github.com/ShirkNeko/SukiSU_patch)
