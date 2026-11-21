@@ -86,7 +86,7 @@ susfs_apply() {
        kernel ${kver}, used branch '${branch}'."
 
 	# 3. Patch the KernelSU side -- but only when the variant does not already
-	#    ship SUSFS support. SukiSU-Ultra's 'builtin' branch, for instance,
+	#    ship SUSFS support. SukiSU-Nova's 'builtin' branch, for instance,
 	#    declares CONFIG_KSU_SUSFS itself; applying the patch on top conflicts.
 	local ksu_dir="${KERNEL_DIR}/${KSU_DIR:-KernelSU}"
 	local ksu_patch="${kp}/KernelSU/10_enable_susfs_for_ksu.patch"
@@ -103,7 +103,7 @@ susfs_apply() {
 			warn "susfs4ksu's non-GKI branches were last updated in early 2025 and still"
 			warn "target the old flat KernelSU layout; modern forks have since moved to a"
 			warn "modular kernel/ tree. Try a variant/ref whose layout matches, or a fork"
-			warn "that bundles SUSFS itself (e.g. KSU_VARIANT=sukisu-ultra KSU_REF=builtin)."
+			warn "that bundles SUSFS itself (e.g. KSU_VARIANT=sukisu-nova KSU_REF=builtin)."
 			die "SUSFS integration failed"
 		}
 	fi
@@ -152,6 +152,13 @@ susfs_defconfig() {
 		| awk '{print $2}' | sort -u)
 
 	if [ -z "$syms" ]; then
+		# Nova's modular main tree has no KSU_SUSFS Kconfig options; it talks
+		# to the SUSFS code added by the kernel-side patch directly, so there
+		# is nothing to write into the defconfig.
+		if [ "${KSU_VARIANT:-}" = "sukisu-nova" ] && [ "${KSU_REF_RESOLVED:-}" = "main" ]; then
+			info "SukiSU-Nova main exposes no KSU_SUSFS options; the kernel-side patch is authoritative"
+			return 0
+		fi
 		die "found no KSU_SUSFS Kconfig symbols to enable.
        The SUSFS sources are in the tree but nothing declares its options, so
        the feature would silently compile out and you would ship a kernel that
@@ -363,22 +370,39 @@ extract_diff_git_section() {
 # still get root through the execve hook, which makes the kernel look healthy.
 # scope_min_manual_hooks_v1.6.patch carries the missing hunk and calls the
 # same ksu_handle_sys_reboot() this tree implements, so graft just that file.
+#
+# The upstream hunk is guarded by `defined(CONFIG_KSU_MANUAL_HOOK)`. SukiSU-
+# Nova's legacy builtin tree does not declare that symbol at all, so the call
+# compiles out and the manager never receives its kernel fd -- exactly the
+# "更新 App Profile 失败 / 模块无法激活" failure. Rewrite the guard to
+# CONFIG_KSU, which is always set on a KernelSU build.
 sukisu_ensure_supercall_hook() {
 	local dir=$1 rc="${KERNEL_DIR}/kernel/reboot.c"
 	[ -f "$rc" ] || return 0
 	grep -q 'ksu_handle_sys_reboot' "$rc" && return 0
 
 	local src="${dir}/hooks/scope_min_manual_hooks_v1.6.patch"
-	[ -f "$src" ] || die "no scope_min manual hooks patch; cannot wire the sys_reboot supercall hook"
+	local bundled="${REPO_ROOT}/patches/ksu_reboot_supercall.patch"
 
 	local tmpdir tmp
 	tmpdir=$(mktemp -d)
 	tmp="${tmpdir}/ksu_reboot_supercall.patch"
-	extract_diff_git_section "$src" "$tmp" "kernel/reboot.c"
-	if [ ! -s "$tmp" ]; then
-		rm -rf "$tmpdir"
-		die "scope_min patch has no kernel/reboot.c section; cannot wire the sys_reboot supercall hook"
+	if [ -f "$src" ]; then
+		extract_diff_git_section "$src" "$tmp" "kernel/reboot.c"
 	fi
+
+	if [ -s "$tmp" ]; then
+		sed -i 's/defined(CONFIG_KSU) \&\& defined(CONFIG_KSU_MANUAL_HOOK)/defined(CONFIG_KSU)/g' "$tmp"
+	else
+		# Keep the critical supercall wiring independent of a third-party
+		# patch repository that can reorganise its layout at any time.
+		warn "scope_min patch has no usable kernel/reboot.c section; using the bundled reboot-only hunk"
+		tmp=$bundled
+	fi
+	[ -f "$tmp" ] || {
+		rm -rf "$tmpdir"
+		die "no kernel/reboot.c supercall hunk available; cannot wire the sys_reboot hook"
+	}
 	if ( cd "$KERNEL_DIR" && apply_patch "$tmp" 1 ); then
 		ok "installed the sys_reboot supercall hook"
 	else
@@ -392,14 +416,35 @@ sukisu_ensure_supercall_hook() {
 # hooks to already exist in the kernel source rather than hooking via kprobes.
 hooks_patch_apply() {
 	local variant=${KSU_VARIANT:-none} kver
+	case "$variant" in
+		resukisu)     variant=bakasu ;;
+		sukisu-ultra) variant=sukisu-nova ;;
+	esac
 	kver=$(kernel_version "$KERNEL_DIR") || return 0
 
 	group "Applying manual syscall hooks (kernel ${kver})"
 
-	# BakaSU (formerly ReSukiSU) publishes scope-minimised hook patches keyed
-	# by kernel version. The patch repo still lives under the old org name.
-	if [ "$variant" = "bakasu" ] || [ "$variant" = "resukisu" ]; then
-		local dir="${WORKSPACE}/ReSukiSU_Patches"
+	# SukiSU-Nova's main and builtin-new trees install their own hook backends
+	# (kprobes / sys_call_table tampering). Only the legacy 'builtin' tree
+	# expects the hooks to exist in the kernel source.
+	local sukisu_dir=
+	if [ "$variant" = "sukisu-nova" ]; then
+		case "${KSU_REF_RESOLVED:-}" in
+			# A failed clone is not fatal here: the sed fallback and the
+			# bundled reboot hunk still produce a working hook set.
+			builtin) sukisu_dir=$(sukisu_patch_dir) || sukisu_dir= ;;
+			*)
+				info "SukiSU-Nova ref '${KSU_REF_RESOLVED:-main}' installs its own hooks; skipping external hook patches"
+				endgroup
+				return 0
+				;;
+		esac
+	fi
+
+	# BakaSU publishes scope-minimised hook patches keyed by kernel version.
+	# Its patch repository is still hosted under the pre-rename ReSukiSU org.
+	if [ "$variant" = "bakasu" ]; then
+		local dir="${WORKSPACE}/BakaSU_Patches"
 		[ -d "$dir" ] || retry 3 git clone -q --depth=1 \
 			https://github.com/ReSukiSU/ReSukiSU_Patches.git "$dir" || true
 		local p="${dir}/scope-minimized/kernel-${kver}.patch"
@@ -411,10 +456,9 @@ hooks_patch_apply() {
 	fi
 
 	# SukiSU's patch repo carries per-version hook patches too.
-	if [ "$variant" = "sukisu-ultra" ]; then
-		local dir p
-		dir=$(sukisu_patch_dir)
-		for p in "${dir}/${kver}/"*hook*.patch "${dir}/hooks/syscall_hooks.patch"; do
+	if [ -n "$sukisu_dir" ]; then
+		local p
+		for p in "${sukisu_dir}/${kver}/"*hook*.patch "${sukisu_dir}/hooks/syscall_hooks.patch"; do
 			[ -f "$p" ] || continue
 			local use=$p filtered=
 			if grep -qE '^(static )?int path_umount' "${KERNEL_DIR}/fs/namespace.c" 2>/dev/null; then
@@ -430,7 +474,7 @@ hooks_patch_apply() {
 			fi
 			if ( cd "$KERNEL_DIR" && apply_patch "$use" 1 ); then
 				if [ -n "$filtered" ]; then rm -f "$filtered"; fi
-				sukisu_ensure_supercall_hook "$dir"
+				sukisu_ensure_supercall_hook "$sukisu_dir"
 				endgroup; return 0
 			fi
 			if [ -n "$filtered" ]; then rm -f "$filtered"; fi
@@ -441,12 +485,19 @@ hooks_patch_apply() {
 	# historically and still works for the 4.9-5.4 KernelSU 0.9.x hook API.
 	info "falling back to the bundled legacy hook script"
 	( cd "$KERNEL_DIR" && bash "${REPO_ROOT}/patches/legacy_ksu_hooks.sh" )
+
+	# The sed fallback does not touch reboot.c, so Nova's manager would still
+	# lose the supercall channel. Install that entry point regardless of which
+	# hook patch above was used.
+	if [ "$variant" = "sukisu-nova" ]; then
+		sukisu_ensure_supercall_hook "${sukisu_dir:-}"
+	fi
 	endgroup
 }
 
 # ======================================================================== KPM
 
-# SukiSU-Ultra's Kernel Patch Module support needs a post-link step: the
+# SukiSU-Nova's Kernel Patch Module support needs a post-link step: the
 # patch_linux tool rewrites the built Image and emits oImage.
 kpm_patch_image() {
 	local image=$1

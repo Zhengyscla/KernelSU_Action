@@ -60,7 +60,36 @@ make_boot_image() {
 	[ -x "${tools}/unpack_bootimg.py" ] || [ -f "${tools}/unpack_bootimg.py" ] \
 		|| die "mkbootimg tools not found at ${tools}"
 
-	fetch "${SOURCE_BOOT_IMAGE:?SOURCE_BOOT_IMAGE required}" "${WORKSPACE}/boot-source.img"
+	# A local path is resolved against the current directory first (the
+	# workflow runs from the repository root, where boot/boot.img lives) and
+	# then against GITHUB_WORKSPACE. Anything else is downloaded.
+	local src=${SOURCE_BOOT_IMAGE:?SOURCE_BOOT_IMAGE required}
+	local staged="${WORKSPACE}/boot-source.img"
+	case "$src" in
+		http://* | https://*)
+			fetch "$src" "$staged" ;;
+		*)
+			if [ -f "$src" ]; then
+				info "using local source boot image: ${src}"
+				cp "$src" "$staged"
+			elif [ -n "${GITHUB_WORKSPACE:-}" ] && [ -f "${GITHUB_WORKSPACE}/${src}" ]; then
+				info "using local source boot image: ${GITHUB_WORKSPACE}/${src}"
+				cp "${GITHUB_WORKSPACE}/${src}" "$staged"
+			else
+				die "SOURCE_BOOT_IMAGE '${src}' is neither a URL nor an existing file"
+			fi
+			;;
+	esac
+
+	# mkbootimg produces an unsigned image. Keep the original AVB footer out
+	# of the way but tell the user why verified boot will reject it.
+	if tail -c 64 "$staged" | grep -q 'AVBf'; then
+		warn "source boot.img is AVB-signed; the repacked boot.img is unsigned (unlocked bootloader required)"
+	fi
+
+	# unpack_bootimg writes its output into ./out; remove stale files from a
+	# previous local run so no old dtb/ramdisk can sneak into the repack.
+	rm -rf "${WORKSPACE}/out"
 
 	cd "$WORKSPACE"
 	local fmt
@@ -71,11 +100,29 @@ make_boot_image() {
 	python3 "${tools}/unpack_bootimg.py" --boot_img boot-source.img >/dev/null \
 		|| die "failed to unpack the source boot image"
 
+	# boot header v2 can carry a dtb in its own section. If the new kernel
+	# image also has one appended (Image.gz-dtb), the repacked boot image will
+	# contain both. That is normally harmless because the appended dtb follows
+	# the gzip stream, but call it out when boot debugging is needed.
+	if [ -f "${WORKSPACE}/out/dtb" ] && [ "${KERNEL_IMAGE_NAME%-dtb}" != "$KERNEL_IMAGE_NAME" ]; then
+		warn "source boot.img has a separate dtb section and ${KERNEL_IMAGE_NAME} embeds one too; both will be present"
+	fi
+
 	cp "${BOOT_OUT}/${KERNEL_IMAGE_NAME}" "${WORKSPACE}/out/kernel" \
 		|| die "could not stage the new kernel into the unpacked ramdisk"
 
-	# shellcheck disable=SC2086
-	python3 "${tools}/mkbootimg.py" $fmt -o boot.img || die "mkbootimg failed"
+	# --format mkbootimg prints a shell-quoted argument list. Expanding it
+	# unquoted breaks values that contain spaces (the cmdline usually does),
+	# and eval would execute whatever a hostile boot image put in cmdline.
+	# Split it with shlex instead and pass the words through an array.
+	local -a fmt_args
+	mapfile -d '' -t fmt_args < <(
+		python3 -c 'import shlex, sys; sys.stdout.write("\0".join(shlex.split(sys.argv[1])) + "\0")' "$fmt"
+	)
+	[ "${#fmt_args[@]}" -gt 0 ] || die "could not parse the source boot image arguments"
+
+	python3 "${tools}/mkbootimg.py" "${fmt_args[@]}" -o boot.img \
+		|| die "mkbootimg failed"
 	[ -s "${WORKSPACE}/boot.img" ] || die "boot.img was not produced"
 
 	ok "boot.img built ($(du -h "${WORKSPACE}/boot.img" | cut -f1))"

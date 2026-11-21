@@ -164,7 +164,7 @@ apply_legacy_bridge() {
 	if [ "${CFG[KSU_VARIANT]}" = "none" ] && is_true "$legacy_enable"; then
 		CFG[KSU_VARIANT]="kernelsu"
 		warn "config.env uses the legacy ENABLE_KERNELSU flag; treating it as KSU_VARIANT=kernelsu."
-		warn "Set KSU_VARIANT explicitly to pick a fork (kernelsu-next, sukisu-ultra, bakasu, ...)."
+		warn "Set KSU_VARIANT explicitly to pick a fork (kernelsu-next, sukisu-nova, bakasu, ...)."
 	fi
 
 	# APPLY_KSU_PATCH used to mean "run the bundled sed script to add manual
@@ -175,6 +175,21 @@ apply_legacy_bridge() {
 	fi
 
 	unset 'CFG[_LEGACY_ENABLE_KERNELSU]' 'CFG[_LEGACY_APPLY_KSU_PATCH]'
+}
+
+# Upstream project renames. The old spellings stay accepted so existing
+# config files keep building, but everything downstream sees one name.
+normalize_variant_names() {
+	case "${CFG[KSU_VARIANT]}" in
+		resukisu)
+			warn "KSU_VARIANT=resukisu is the pre-rename spelling of BakaSU; using 'bakasu'."
+			CFG[KSU_VARIANT]="bakasu"
+			;;
+		sukisu-ultra)
+			warn "KSU_VARIANT=sukisu-ultra has been renamed to SukiSU-Nova; using 'sukisu-nova'."
+			CFG[KSU_VARIANT]="sukisu-nova"
+			;;
+	esac
 }
 
 # -------------------------------------------------------------- validation ---
@@ -194,7 +209,7 @@ validate() {
 	esac
 
 	case "${CFG[KSU_VARIANT]}" in
-		none | kernelsu | kernelsu-next | sukisu-ultra | bakasu | resukisu | rsuntk | backslashxx) ;;
+		none | kernelsu | kernelsu-next | sukisu-nova | bakasu | rsuntk | backslashxx) ;;
 		*) _err "unknown KSU_VARIANT '${CFG[KSU_VARIANT]}'" ;;
 	esac
 
@@ -207,13 +222,13 @@ validate() {
 		is_true "${CFG[ENABLE_SUSFS]}" &&
 			_err "ENABLE_SUSFS requires a KSU_VARIANT other than 'none'"
 		is_true "${CFG[ENABLE_KPM]}" &&
-			_err "ENABLE_KPM requires KSU_VARIANT=sukisu-ultra"
+			_err "ENABLE_KPM requires KSU_VARIANT=sukisu-nova"
 	fi
 
-	# KPM is a SukiSU-Ultra feature and its patch_linux tool is 64-bit only.
+	# KPM is a SukiSU-Nova feature and its patch_linux tool is 64-bit only.
 	if is_true "${CFG[ENABLE_KPM]}"; then
-		[ "${CFG[KSU_VARIANT]}" = "sukisu-ultra" ] ||
-			_err "ENABLE_KPM is only supported with KSU_VARIANT=sukisu-ultra (got '${CFG[KSU_VARIANT]}')"
+		[ "${CFG[KSU_VARIANT]}" = "sukisu-nova" ] ||
+			_err "ENABLE_KPM is only supported with KSU_VARIANT=sukisu-nova (got '${CFG[KSU_VARIANT]}')"
 		[ "${CFG[ARCH]}" = "arm64" ] ||
 			_err "ENABLE_KPM requires ARCH=arm64"
 	fi
@@ -238,6 +253,7 @@ validate() {
 declare -A CFG
 resolve
 apply_legacy_bridge
+normalize_variant_names
 validate
 
 # Derive the device label from the defconfig name, as before.

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Install a KernelSU variant into the kernel tree.
 #
-# Every variant ships a near-identical kernel/setup.sh that clones itself next
-# to the kernel tree and symlinks drivers/kernelsu at it. RKSU (rsuntk) is
-# handled specially because its current setup.sh can fail to resolve the
-# requested branch/ref in a fresh clone.
+# Most variants ship a near-identical kernel/setup.sh that clones itself next
+# to the kernel tree and symlinks drivers/kernelsu at it. RKSU (rsuntk) and
+# SukiSU-Nova are handled by our own installer because their setup.sh scripts
+# either fail to resolve the requested ref or clone from a third-party host.
 #
-# For RKSU we perform the clone/fetch/checkout ourselves and then reproduce
-# the setup.sh integration steps.
+# For those two we perform the clone/fetch/checkout ourselves and then
+# reproduce the setup.sh integration steps.
 #
 # The critical safety property: every variant's requested ref is validated
 # before installation and the resulting checkout is verified afterwards.
@@ -38,13 +38,17 @@ ksu_registry() {
 	kernelsu-next)
 		# 'next' was renamed to 'legacy' and the default branch is now 'dev'.
 		echo "https://github.com/KernelSU-Next/KernelSU-Next|dev|KernelSU-Next|dev|legacy|-|KernelSU-Next" ;;
-	sukisu-ultra)
-		# 'main' is the modular v4 tree; 'builtin' is the non-GKI/source-
-		# integrated tree and is the one carrying the builtin integration.
-		echo "https://github.com/SukiSU-Ultra/SukiSU-Ultra|main|KernelSU|main|builtin|builtin|SukiSU-Ultra" ;;
-	bakasu | resukisu)
-		# BakaSU, renamed from ReSukiSU on 2026-10-06. The old variant name
-		# stays accepted so existing configs keep building.
+	sukisu-nova)
+		# SukiSU-Nova (renamed from SukiSU-Ultra in 2026-11). 'main' is the
+		# modular v3 tree; 'builtin' is the legacy source-integrated tree that
+		# carries built-in SUSFS; 'builtin-new' is the newer integrated tree
+		# with its own syscall-table/kprobe hook backends.
+		#
+		# setup_ref is 'builtin': the main tree's setup.sh clones from a
+		# third-party git host, while the builtin script clones GitHub. The
+		# manual installer below does not use setup.sh at all.
+		echo "https://github.com/SukiSU-Nova/SukiSU-Nova|builtin|KernelSU|main|builtin|builtin builtin-new|SukiSU-Nova" ;;
+	bakasu)
 		echo "https://github.com/Baka-SU/BakaSU|main|KernelSU|main|main|-|BakaSU" ;;
 	rsuntk)
 		# RKSU. Its current setup.sh can fail to checkout a branch such as
@@ -64,14 +68,14 @@ ksu_field() {
 # BakaSU's setup.sh checks out 'main' when given no argument, while every
 # other variant checks out the latest tag.
 ksu_default_is_branch() {
-	[ "$1" = "bakasu" ] || [ "$1" = "resukisu" ]
+	[ "$1" = "bakasu" ]
 }
 
 # Some KernelSU trees carry source that only builds on newer kernels despite
 # advertising pre-GKI support. Apply the smallest possible fixups here rather
 # than vendoring a whole patch.
 #
-# SukiSU-Ultra's builtin tree includes <linux/static_call.h> unconditionally.
+# SukiSU-Nova's builtin tree includes <linux/static_call.h> unconditionally.
 # That header only exists from 5.10 and nothing in the tree uses it, so older
 # kernels fail with "file not found" while compiling ksu_main.c.
 ksu_legacy_source_fixups() {
@@ -82,7 +86,7 @@ ksu_legacy_source_fixups() {
 
 	ver_ge "$kver" "5.10" && return 0
 
-	# SukiSU-Ultra's builtin tree includes <linux/static_call.h> unconditionally.
+	# SukiSU-Nova's builtin tree includes <linux/static_call.h> unconditionally.
 	# That header only exists from 5.10 and nothing in the tree uses it, so
 	# older kernels fail with "file not found" while compiling ksu_main.c.
 	if [ -f "$inc" ] && grep -q '^#include <linux/static_call\.h>$' "$inc"; then
@@ -146,29 +150,27 @@ ksu_legacy_source_fixups() {
 	fi
 }
 
-# --------------------------------------------------------- RKSU installer ----
+# -------------------------------------------------------- manual installer ---
 #
-# RKSU's current kernel/setup.sh performs:
+# Some variants get an installer we control instead of their setup.sh:
 #
-#   git clone ...
-#   git pull
-#   git checkout "$1"
-#
-# In the Action environment, "main" can be visible through ls-remote while
-# not being available as a local branch after clone/pull. The upstream script
-# then swallows the checkout failure and continues, eventually leaving no
-# valid drivers/kernelsu symlink.
+#   - RKSU's setup.sh can silently fail its checkout in the Action environment;
+#     "main" is visible through ls-remote but not always available as a local
+#     branch after clone/pull, and the failure is swallowed.
+#   - SukiSU-Nova's main setup.sh clones from a third-party git host; we clone
+#     the GitHub repository the registry names.
 #
 # We therefore:
-#   1. clone RKSU ourselves;
+#   1. clone the repository ourselves;
 #   2. fetch the requested ref explicitly;
 #   3. checkout a local branch for branches, or detached HEAD for tags/commits;
 #   4. create the same KernelSU integration performed by setup.sh.
 #
-rk_su_install() {
+ksu_manual_install() {
 	local repo=$1
 	local ref=$2
 	local dir=$3
+	local name=${4:-KernelSU}
 
 	local ksu_dir="${KERNEL_DIR}/${dir}"
 	local driver_dir="${KERNEL_DIR}/drivers"
@@ -176,23 +178,23 @@ rk_su_install() {
 	local driver_kconfig="${driver_dir}/Kconfig"
 	local link="${driver_dir}/kernelsu"
 
-	info "Using built-in RKSU installer"
+	info "Using built-in installer for ${name}"
 	info "repository: ${repo}"
 	info "requested ref: ${ref}"
 
 	[ -d "$driver_dir" ] || die "drivers/ directory not found in kernel tree"
 
 	# A fresh Action build should not contain an old KernelSU checkout.
-	# Remove only the expected RKSU directory and integration symlink.
+	# Remove only the expected checkout directory and integration symlink.
 	if [ -e "$link" ] || [ -L "$link" ]; then
 		rm -f "$link"
 	fi
 
 	if [ -d "$ksu_dir/.git" ]; then
-		info "existing RKSU repository detected; updating it"
+		info "existing KernelSU repository detected; updating it"
 	else
 		rm -rf "$ksu_dir"
-		info "cloning RKSU"
+		info "cloning ${name}"
 		git clone "$repo" "$ksu_dir"
 	fi
 
@@ -207,17 +209,17 @@ rk_su_install() {
 	# For a commit:
 	#   fetch the object and detach at the commit.
 	if [ -z "$ref" ]; then
-		die "RKSU requires an explicit ref; refusing to install an unpinned moving branch"
+		die "${name} requires an explicit ref; refusing to install an unpinned moving branch"
 	fi
 
 	if git -C "$ksu_dir" ls-remote --exit-code --heads origin "$ref" >/dev/null 2>&1; then
-		info "fetching RKSU branch '${ref}'"
+		info "fetching ${name} branch '${ref}'"
 		git -C "$ksu_dir" fetch --force origin \
 			"refs/heads/${ref}:refs/remotes/origin/${ref}"
 
 		git -C "$ksu_dir" checkout -B "$ref" "origin/${ref}"
 	elif git -C "$ksu_dir" ls-remote --exit-code --tags origin "$ref" >/dev/null 2>&1; then
-		info "fetching RKSU tag '${ref}'"
+		info "fetching ${name} tag '${ref}'"
 		git -C "$ksu_dir" fetch --force --tags origin
 		git -C "$ksu_dir" checkout --detach "$ref"
 	else
@@ -232,11 +234,11 @@ rk_su_install() {
 	local head_sha
 	head_sha=$(git -C "$ksu_dir" rev-parse --verify HEAD)
 
-	[ -n "$head_sha" ] || die "RKSU checkout did not produce a valid HEAD"
+	[ -n "$head_sha" ] || die "${name} checkout did not produce a valid HEAD"
 
-	# The kernel/setup.sh expects this directory to exist.
+	# setup.sh expects this directory to exist.
 	[ -d "$ksu_dir/kernel" ] \
-		|| die "RKSU checkout ${ref} does not contain KernelSU/kernel"
+		|| die "${name} checkout ${ref} does not contain KernelSU/kernel"
 
 	# Reproduce:
 	#
@@ -249,13 +251,13 @@ rk_su_install() {
 
 	[ -e "$link" ] || die "failed to create drivers/kernelsu symlink"
 
-	# Reproduce the Makefile integration performed by RKSU setup.sh.
+	# Reproduce the Makefile integration performed by setup.sh.
 	if ! grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/?[[:space:]]*$' "$driver_makefile"; then
 		printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >>"$driver_makefile"
 		info "added CONFIG_KSU rule to drivers/Makefile"
 	fi
 
-	# Reproduce the Kconfig integration performed by RKSU setup.sh.
+	# Reproduce the Kconfig integration performed by setup.sh.
 	if ! grep -q 'drivers/kernelsu/Kconfig' "$driver_kconfig"; then
 		sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' "$driver_kconfig"
 		info "added KernelSU Kconfig entry to drivers/Kconfig"
@@ -271,7 +273,7 @@ rk_su_install() {
 	local head_desc
 	head_desc=$(git -C "$ksu_dir" describe --tags --always 2>/dev/null || echo "$head_sha")
 
-	ok "RKSU installed at ${head_desc} (${head_sha:0:12})"
+	ok "${name} installed at ${head_desc} (${head_sha:0:12})"
 }
 
 # ------------------------------------------------------------ install ---
@@ -304,8 +306,8 @@ ksu_install() {
 		fi
 	fi
 
-	# RKSU must have a concrete ref because the custom installer intentionally
-	# refuses to follow an unpinned moving branch.
+	# Variants installed by ksu_manual_install must have a concrete ref because
+	# it intentionally refuses to follow an unpinned moving branch.
 	if [ "$variant" = "rsuntk" ] && [ -z "$ref" ]; then
 		ref="main"
 		info "RKSU ref was empty; using 'main'"
@@ -331,13 +333,13 @@ ksu_install() {
 	fi
 
 	# ----------------------------------------------------------------------
-	# RKSU special path
+	# Variants that use the installer above
 	#
-	# Do not invoke rsuntk/KernelSU/kernel/setup.sh because its current
-	# checkout logic can fail on a fresh GitHub Actions clone.
+	# rsuntk: its setup.sh checkout can fail on a fresh Actions clone.
+	# sukisu-nova: its setup.sh (main) clones from a third-party git host.
 	# ----------------------------------------------------------------------
-	if [ "$variant" = "rsuntk" ]; then
-		rk_su_install "$repo" "$ref" "$dir"
+	if [ "$variant" = "rsuntk" ] || [ "$variant" = "sukisu-nova" ]; then
+		ksu_manual_install "$repo" "$ref" "$dir" "$name"
 	else
 		# --- normal variant installer --------------------------------------
 
@@ -425,8 +427,8 @@ ksu_install() {
 	head_sha=$(git -C "$ksu_dir" rev-parse --short HEAD)
 	head_desc=$(git -C "$ksu_dir" describe --tags --always 2>/dev/null || echo "$head_sha")
 
-	# Final requested-ref verification for the RKSU custom installer.
-	if [ "$variant" = "rsuntk" ] && [ -n "$ref" ]; then
+	# Final requested-ref verification for the manual installer.
+	if { [ "$variant" = "rsuntk" ] || [ "$variant" = "sukisu-nova" ]; } && [ -n "$ref" ]; then
 		local resolved_ref
 		resolved_ref=$(git -C "$ksu_dir" rev-parse HEAD)
 
@@ -525,11 +527,15 @@ ksu_hook_configs() {
 				kconf_enable "$defconfig" CONFIG_KSU_MANUAL_HOOK
 				;;
 
-			sukisu-ultra)
-				kconf_enable "$defconfig" CONFIG_KSU_MANUAL_HOOK
+			sukisu-nova)
+				# Nova's legacy 'builtin' tree does not declare a
+				# KSU_MANUAL_HOOK symbol; its hooks are source patches
+				# guarded by CONFIG_KSU. The newer branches select their own
+				# hook backend. Do not write a symbol that Kconfig would drop.
+				:
 				;;
 
-			bakasu | resukisu)
+			bakasu)
 				# BakaSU's non-GKI static export check requires the
 				# complete kallsyms table unless internal SELinux symbols
 				# are exported manually by the vendor tree.
@@ -557,9 +563,8 @@ ksu_hook_configs() {
 		;;
 
 	tracepoint)
-		[ "$variant" = "bakasu" ] || [ "$variant" = "resukisu" ] ||
-			[ "$variant" = "sukisu-ultra" ] \
-			|| warn "hook mode 'tracepoint' is only declared by BakaSU/SukiSU-Ultra; ignoring for ${variant}"
+		[ "$variant" = "bakasu" ] \
+			|| warn "hook mode 'tracepoint' is only declared by BakaSU; ignoring for ${variant}"
 
 		kconf_enable "$defconfig" CONFIG_KSU_TRACEPOINT_HOOK
 		;;
@@ -572,6 +577,18 @@ ksu_hook_configs() {
 		die "unknown KSU_HOOK_MODE '${mode}'"
 		;;
 	esac
+
+	# SukiSU-Nova needs the full symbol table on non-GKI kernels. Its
+	# 'builtin-new' branch additionally ships a self-contained sys_call_table
+	# backend, which is the reliable choice on pre-4.19 trees where kprobes
+	# are often unusable; it conflicts with SUSFS by design.
+	if [ "$variant" = "sukisu-nova" ] && ! ver_ge "$kver" "5.10"; then
+		kconf_set_many "$defconfig" CONFIG_KALLSYMS=y CONFIG_KALLSYMS_ALL=y
+		if [ "${KSU_REF_RESOLVED:-}" = "builtin-new" ] &&
+		   ! is_true "${ENABLE_SUSFS:-false}"; then
+			kconf_enable "$defconfig" CONFIG_KSU_TAMPER_SYSCALL_TABLE
+		fi
+	fi
 }
 
 # Only run the installer when sourced as a script entry point.
